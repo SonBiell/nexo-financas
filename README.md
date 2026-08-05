@@ -27,7 +27,28 @@ O banco local fica em `instance/financas.db`. Essa pasta é ignorada pelo Git e 
 - `static/`: estilos e comportamento da interface.
 - `tests/`: testes automatizados dos fluxos críticos.
 
-## Publicação 24 horas no Railway
+## Hospedagem gratuita no PythonAnywhere
+
+O PythonAnywhere Free mantém o SQLite no armazenamento privado da conta e fornece HTTPS. O arquivo `pythonanywhere_wsgi.py` cria automaticamente uma chave secreta e o banco em `~/.nexo-private`, fora do repositório público.
+
+1. Crie uma conta gratuita no PythonAnywhere.
+2. Abra um console Bash e execute:
+   - `git clone https://github.com/SonBiell/nexo-financas.git`
+   - `cd nexo-financas`
+   - `python3.13 -m venv .venv`
+   - `.venv/bin/pip install -r requirements.txt`
+3. Na aba **Web**, crie um app em **Manual configuration** com Python 3.13.
+4. Configure o virtualenv como `/home/SEU_USUARIO/nexo-financas/.venv`.
+5. No arquivo WSGI do painel, use:
+   - `import sys`
+   - `sys.path.insert(0, '/home/SEU_USUARIO/nexo-financas')`
+   - `from pythonanywhere_wsgi import application`
+6. Em **Static files**, configure `/static/` para `/home/SEU_USUARIO/nexo-financas/static`.
+7. Recarregue o app e abra o endereço HTTPS fornecido.
+
+Contas gratuitas possuem 512 MiB, um web worker e expiração mensal do app; renove gratuitamente pelo painel antes do vencimento.
+
+## Alternativa: Railway com volume persistente
 
 O repositório contém `Dockerfile` e `railway.json` prontos para implantação.
 
