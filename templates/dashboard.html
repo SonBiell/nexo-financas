@@ -1,0 +1,30 @@
+{% extends 'base.html' %}{% block title %}Visão geral{% endblock %}
+{% block content %}
+<div class="page-head dashboard-head"><div><p class="eyebrow">PAINEL FINANCEIRO</p><h1>Visão geral</h1><p>Acompanhe sua posição financeira e as próximas decisões.</p></div><div class="head-actions"><form><label>Período<input class="auto-submit" type="month" name="month" value="{{ month }}"></label></form><a class="button" href="{{ url_for('transactions') }}">+ Nova movimentação</a></div></div>
+<div class="summary-heading"><div><p class="eyebrow">RESUMO MENSAL</p><h2>{{ month[5:7] }}/{{ month[:4] }}</h2></div><span class="net-result {{ 'positive' if totals.income >= totals.expense else 'negative' }}"><small>Resultado líquido</small><strong>{{ (totals.income - totals.expense)|money }}</strong></span></div>
+<section class="metric-grid summary-cards">
+  <article class="metric wallet"><div class="metric-top"><span>Saldo disponível</span><i>◉</i></div><strong>{{ wallet|money }}</strong><small>Saldo atual da carteira</small></article>
+  <article class="metric"><div class="metric-top"><span>Entradas no mês</span><i class="income">↗</i></div><strong>{{ totals.income|money }}</strong><small>Créditos registrados</small></article>
+  <article class="metric"><div class="metric-top"><span>Saídas no mês</span><i class="expense">↘</i></div><strong>{{ totals.expense|money }}</strong><small>Débitos registrados</small></article>
+</section>
+<section class="expense-watch panel">
+  <div class="panel-head"><div><p class="eyebrow">CONTAS A PAGAR</p><h2>Visão das despesas</h2></div><a href="{{ url_for('expenses') }}">Ver todas →</a></div>
+  <div class="expense-watch-grid">
+    <div class="expense-stats">
+      <article><span>Em aberto</span><strong>{{ expense_overview.open_total|money }}</strong><small>{{ expense_overview.open_count }} despesa{{ '' if expense_overview.open_count == 1 else 's' }}</small></article>
+      <article class="{{ 'danger' if expense_overview.overdue_count else '' }}"><span>Atrasadas</span><strong>{{ expense_overview.overdue_count }}</strong><small>{{ expense_overview.overdue_total|money }} vencidos</small></article>
+      <article class="{{ 'warning' if expense_overview.due_soon_count else '' }}"><span>Próximos 7 dias</span><strong>{{ expense_overview.due_soon_count }}</strong><small>Próximas do vencimento</small></article>
+    </div>
+    <div class="due-list">{% if urgent_expenses %}{% for item in urgent_expenses %}{% set overdue = item.due_on < today %}<a href="{{ url_for('expenses', status='overdue' if overdue else 'pending') }}" class="due-item {{ 'overdue' if overdue else 'soon' }}"><i style="--expense-color:{{ item.color or '#64748b' }}"></i><div><strong>{{ item.description }}</strong><small>{{ item.category_name or 'Sem categoria' }} · {{ 'Venceu' if overdue else 'Vence' }} em {{ item.due_on[8:10] }}/{{ item.due_on[5:7] }}</small></div><b>{{ item.amount_cents|money }}</b><span>{{ 'Atrasada' if overdue else 'Próxima' }}</span></a>{% endfor %}{% else %}<div class="all-clear"><span>✓</span><div><strong>Nenhuma conta urgente</strong><small>Não há despesas atrasadas ou vencendo nos próximos sete dias.</small></div></div>{% endif %}</div>
+  </div>
+</section>
+<div class="dashboard-grid">
+  <section class="panel"><div class="panel-head"><div><p class="eyebrow">MOVIMENTAÇÃO</p><h2>Últimas transações</h2></div><a href="{{ url_for('transactions') }}">Ver todas →</a></div>
+    {% if recent %}<div class="transaction-list">{% for item in recent %}<div class="transaction-row"><span class="category-dot" style="--dot:{{ item.color or '#64748b' }}">{{ item.description[0]|upper }}</span><div><strong>{{ item.description }}</strong><small>{{ item.category_name or 'Sem categoria' }} · {{ item.occurred_on[8:10] }}/{{ item.occurred_on[5:7] }}</small></div><b class="{{ item.type }}">{{ '+' if item.type == 'income' else '-' }} {{ item.amount_cents|money }}</b></div>{% endfor %}</div>{% else %}<div class="empty"><span>↗</span><h3>Seu mês começa aqui</h3><p>Registre a primeira entrada ou saída para visualizar seu resumo.</p><a class="button" href="{{ url_for('transactions') }}">Nova transação</a></div>{% endif %}
+  </section>
+  <section class="panel"><div class="panel-head"><div><p class="eyebrow">DESPESAS</p><h2>Por categoria</h2></div></div>
+    {% if breakdown %}<div class="breakdown">{% set max_total = breakdown[0].total %}{% for item in breakdown %}<div><div class="bar-label"><span><i style="background:{{ item.color }}"></i>{{ item.name }}</span><b>{{ item.total|money }}</b></div><div class="bar"><i style="width:{{ (item.total / max_total * 100)|round }}%;background:{{ item.color }}"></i></div></div>{% endfor %}</div>{% else %}<div class="empty compact"><span>◇</span><p>Nenhuma despesa neste mês.</p></div>{% endif %}
+  </section>
+</div>
+{% endblock %}
+
