@@ -92,6 +92,15 @@ def create_app(test_config: dict | None = None) -> Flask:
                 "INSERT OR IGNORE INTO categories (name, color) VALUES (?, ?)",
                 [("Moradia", "#8b5cf6"), ("Alimentação", "#22c55e"), ("Transporte", "#38bdf8"), ("Salário", "#f59e0b")],
             )
+            for damaged_name, correct_name in (("AlimentaÃ§Ã£o", "Alimentação"), ("SalÃ¡rio", "Salário")):
+                damaged = connection.execute("SELECT id FROM categories WHERE name=?", (damaged_name,)).fetchone()
+                correct = connection.execute("SELECT id FROM categories WHERE name=?", (correct_name,)).fetchone()
+                if damaged and correct:
+                    connection.execute("UPDATE transactions SET category_id=? WHERE category_id=?", (correct["id"], damaged["id"]))
+                    connection.execute("UPDATE expenses SET category_id=? WHERE category_id=?", (correct["id"], damaged["id"]))
+                    connection.execute("DELETE FROM categories WHERE id=?", (damaged["id"],))
+                elif damaged:
+                    connection.execute("UPDATE categories SET name=? WHERE id=?", (correct_name, damaged["id"]))
 
     init_db()
 
