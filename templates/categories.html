@@ -1,0 +1,6 @@
+{% extends 'base.html' %}{% block title %}Categorias{% endblock %}{% block content %}
+<div class="page-head"><div><p class="eyebrow">ORGANIZAÇÃO</p><h1>Categorias</h1><p>Crie grupos para entender melhor para onde vai seu dinheiro.</p></div></div>
+<div class="form-layout categories-layout"><section class="panel form-panel"><h2>Nova categoria</h2><form method="post" class="form-grid"><label class="full">Nome<input required name="name" placeholder="Ex.: Lazer"></label><label class="full">Cor<input type="color" name="color" value="#8b5cf6"></label><button class="button full">Criar categoria</button></form></section>
+<section class="panel"><div class="panel-head"><h2>Suas categorias</h2><span class="badge">{{ categories|length }}</span></div><div class="category-grid">{% for c in categories %}<article><i style="background:{{ c.color }}"></i><div><strong>{{ c.name }}</strong><small>{{ c.transaction_count }} transaç{{ 'ão' if c.transaction_count == 1 else 'ões' }}</small></div></article>{% endfor %}</div></section></div>
+{% endblock %}
+
