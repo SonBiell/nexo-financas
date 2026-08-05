@@ -32,7 +32,7 @@ def create_app(test_config: dict | None = None) -> Flask:
     production = os.environ.get("FINANCE_ENV") == "production"
     secret_key = os.environ.get("FINANCE_SECRET")
     if production and not secret_key:
-        raise RuntimeError("FINANCE_SECRET é obrigatória em produção")
+        raise RuntimeError("FINANCE_SECRET Ã© obrigatÃ³ria em produÃ§Ã£o")
     app.config.from_mapping(
         SECRET_KEY=secret_key or "local-development-key",
         DATABASE=os.environ.get("DATABASE_PATH", str(BASE_DIR / "instance" / "financas.db")),
@@ -90,7 +90,7 @@ def create_app(test_config: dict | None = None) -> Flask:
                 connection.execute("INSERT INTO app_metadata(key,value) VALUES('expenses_split_v1','done')")
             connection.executemany(
                 "INSERT OR IGNORE INTO categories (name, color) VALUES (?, ?)",
-                [("Moradia", "#8b5cf6"), ("Alimentação", "#22c55e"), ("Transporte", "#38bdf8"), ("Salário", "#f59e0b")],
+                [("Moradia", "#8b5cf6"), ("AlimentaÃ§Ã£o", "#22c55e"), ("Transporte", "#38bdf8"), ("SalÃ¡rio", "#f59e0b")],
             )
 
     init_db()
@@ -109,7 +109,7 @@ def create_app(test_config: dict | None = None) -> Flask:
         if request.method == "POST":
             received = request.form.get("csrf_token") or request.headers.get("X-CSRF-Token")
             if not received or not secrets.compare_digest(received, session.get("csrf_token", "")):
-                abort(400, "Formulário expirado. Atualize a página e tente novamente.")
+                abort(400, "FormulÃ¡rio expirado. Atualize a pÃ¡gina e tente novamente.")
         with db() as connection:
             has_user = connection.execute("SELECT 1 FROM users LIMIT 1").fetchone() is not None
         if not has_user and endpoint not in {"setup", "static", "health"}:
@@ -162,17 +162,17 @@ def create_app(test_config: dict | None = None) -> Flask:
             if len(full_name) < 5:
                 flash("Informe seu nome completo.", "error")
             elif len(document) < 7 or len(document) > 14:
-                flash("Informe um RG ou CPF válido.", "error")
+                flash("Informe um RG ou CPF vÃ¡lido.", "error")
             elif not valid_birth_date:
-                flash("Informe uma data de nascimento válida.", "error")
+                flash("Informe uma data de nascimento vÃ¡lida.", "error")
             elif not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
-                flash("Informe um endereço de e-mail válido.", "error")
+                flash("Informe um endereÃ§o de e-mail vÃ¡lido.", "error")
             elif len(username) < 3:
-                flash("O usuário deve ter pelo menos 3 caracteres.", "error")
+                flash("O usuÃ¡rio deve ter pelo menos 3 caracteres.", "error")
             elif len(password) < 8:
                 flash("A senha deve ter pelo menos 8 caracteres.", "error")
             elif password != confirmation:
-                flash("As senhas não coincidem.", "error")
+                flash("As senhas nÃ£o coincidem.", "error")
             else:
                 with db() as connection:
                     cursor = connection.execute("""INSERT INTO users(full_name,document,birth_date,email,username,password_hash)
@@ -200,13 +200,13 @@ def create_app(test_config: dict | None = None) -> Flask:
                     session.permanent = True
                     destination = request.args.get("next", "")
                     return redirect(destination if destination.startswith("/") and not destination.startswith("//") else url_for("dashboard"))
-            flash("Usuário ou senha inválidos.", "error")
+            flash("UsuÃ¡rio ou senha invÃ¡lidos.", "error")
         return render_template("login.html")
 
     @app.post("/logout")
     def logout():
         session.clear()
-        flash("Sessão encerrada com segurança.", "success")
+        flash("SessÃ£o encerrada com seguranÃ§a.", "success")
         return redirect(url_for("login"))
 
     @app.template_filter("money")
@@ -272,14 +272,14 @@ def create_app(test_config: dict | None = None) -> Flask:
             try:
                 kind = request.form["type"]
                 if kind not in {"income", "expense"}:
-                    raise ValueError("Tipo inválido")
+                    raise ValueError("Tipo invÃ¡lido")
                 amount = Decimal(request.form["amount"].replace(",", "."))
                 if amount <= 0:
                     raise ValueError("O valor deve ser positivo")
                 amount_cents = int(amount * 100)
                 description = request.form["description"].strip()
                 if not description:
-                    raise ValueError("Informe uma descrição")
+                    raise ValueError("Informe uma descriÃ§Ã£o")
                 occurred_on = datetime.strptime(request.form["occurred_on"], "%Y-%m-%d").date().isoformat()
                 category_id = request.form.get("category_id") or None
                 with db() as connection:
@@ -287,7 +287,7 @@ def create_app(test_config: dict | None = None) -> Flask:
                         "INSERT INTO transactions(description, amount_cents, type, category_id, occurred_on, notes, source) VALUES(?,?,?,?,?,?, 'manual')",
                         (description, amount_cents, kind, category_id, occurred_on, request.form.get("notes", "").strip()),
                     )
-                flash("Transação salva com sucesso.", "success")
+                flash("TransaÃ§Ã£o salva com sucesso.", "success")
                 return redirect(url_for("transactions"))
             except (ValueError, InvalidOperation, KeyError) as exc:
                 flash(str(exc) or "Confira os dados informados.", "error")
@@ -322,7 +322,128 @@ def create_app(test_config: dict | None = None) -> Flask:
                 installments = int(request.form.get("installment_count", 1))
                 description = request.form["description"].strip()
                 due_on = datetime.strptime(request.form["due_on"], "%Y-%m-%d").date().isoformat()
-                if not description or amount <= 0 or not 1 <= installments <= 360…11682 tokens truncated…003c/span><b>{{ item.total|money }}</b></div><div class="bar"><i style="width:{{ (item.total / max_total * 100)|round }}%;background:{{ item.color }}"></i></div></div>{% endfor %}</div>{% else %}<div class="empty compact"><span>◇</span><p>Nenhuma despesa neste mês.</p></div>{% endif %}
-  </section>
-</div>
-{% endblock %}
+                if not description or amount <= 0 or not 1 <= installments <= 360:
+                    raise ValueError("Confira a descriÃ§Ã£o, o valor e as parcelas.")
+                with db() as connection:
+                    connection.execute("""INSERT INTO expenses(description,amount_cents,category_id,due_on,installment_count,notes)
+                                          VALUES(?,?,?,?,?,?)""", (description, int(amount * 100), request.form.get("category_id") or None, due_on, installments, request.form.get("notes", "").strip()))
+                flash("Despesa cadastrada sem alterar o saldo.", "success")
+                return redirect(url_for("expenses"))
+            except (ValueError, InvalidOperation, KeyError) as exc:
+                flash(str(exc) or "Confira os dados.", "error")
+        status_filter = request.args.get("status", "all")
+        with db() as connection:
+            rows = connection.execute(
+                """SELECT e.*, c.name category_name, c.color FROM expenses e
+                   LEFT JOIN categories c ON c.id=e.category_id ORDER BY e.due_on, e.id DESC"""
+            ).fetchall()
+            categories = connection.execute("SELECT * FROM categories ORDER BY name").fetchall()
+        today = date.today().isoformat()
+        items, counts = [], {"paid": 0, "pending": 0, "overdue": 0}
+        for row in rows:
+            item = dict(row)
+            item["display_status"] = "paid" if item["paid_at"] else ("overdue" if item["due_on"] < today else "pending")
+            counts[item["display_status"]] += 1
+            if status_filter == "all" or item["display_status"] == status_filter:
+                items.append(item)
+        return render_template("expenses.html", expenses=items, status_filter=status_filter, counts=counts, categories=categories, today=today)
+
+    @app.post("/expenses/<int:transaction_id>/pay")
+    def pay_expense(transaction_id: int):
+        with db() as connection:
+            expense = connection.execute("SELECT * FROM expenses WHERE id=?", (transaction_id,)).fetchone()
+            balance = connection.execute("SELECT COALESCE(SUM(CASE WHEN type='income' THEN amount_cents ELSE -amount_cents END),0) FROM transactions").fetchone()[0]
+            if not expense or expense["paid_at"]:
+                flash("Essa despesa nÃ£o estÃ¡ disponÃ­vel para pagamento.", "error")
+                return redirect(url_for("expenses"))
+            if balance < expense["amount_cents"]:
+                flash(f"Saldo insuficiente. Faltam {money(expense['amount_cents'] - balance)}.", "error")
+                return redirect(url_for("expenses"))
+            now = datetime.now()
+            connection.execute("UPDATE expenses SET paid_at=?, installments_paid=installment_count WHERE id=?", (now.isoformat(timespec="seconds"), transaction_id))
+            connection.execute("""INSERT INTO transactions(description,amount_cents,type,category_id,occurred_on,notes,source,expense_id)
+                                  VALUES(?,?,'expense',?,?,?,'expense_payment',?)""", (f"Pagamento: {expense['description']}", expense["amount_cents"], expense["category_id"], now.date().isoformat(), "Pagamento de despesa", transaction_id))
+        flash("Despesa marcada como paga.", "success")
+        return redirect(url_for("expenses"))
+
+    @app.post("/expenses/<int:transaction_id>/restore")
+    def restore_expense(transaction_id: int):
+        with db() as connection:
+            expense = connection.execute("SELECT * FROM expenses WHERE id=?", (transaction_id,)).fetchone()
+            if not expense or not expense["paid_at"]:
+                flash("A despesa ainda nÃ£o foi paga.", "error")
+                return redirect(url_for("expenses"))
+            now = datetime.now()
+            connection.execute("UPDATE expenses SET paid_at=NULL, installments_paid=0 WHERE id=?", (transaction_id,))
+            connection.execute("""INSERT INTO transactions(description,amount_cents,type,category_id,occurred_on,notes,source,expense_id)
+                                  VALUES(?,?,'income',?,?,?,'expense_restore',?)""", (f"Estorno: {expense['description']}", expense["amount_cents"], expense["category_id"], now.date().isoformat(), "RestauraÃ§Ã£o de despesa", transaction_id))
+        flash("Despesa restaurada para pagamento.", "success")
+        return redirect(url_for("expenses"))
+
+    @app.post("/expenses/<int:transaction_id>/delete")
+    def delete_expense(transaction_id: int):
+        with db() as connection:
+            connection.execute("DELETE FROM expenses WHERE id=?", (transaction_id,))
+        flash("Despesa excluÃ­da.", "success")
+        return redirect(url_for("expenses"))
+
+    @app.post("/transactions/<int:transaction_id>/delete")
+    def delete_transaction(transaction_id: int):
+        with db() as connection:
+            connection.execute("DELETE FROM transactions WHERE id=?", (transaction_id,))
+        flash("TransaÃ§Ã£o excluÃ­da.", "success")
+        return redirect(url_for("transactions"))
+
+    @app.route("/categories", methods=["GET", "POST"])
+    def categories():
+        if request.method == "POST":
+            name = request.form.get("name", "").strip()
+            color = request.form.get("color", "#8b5cf6")
+            if not name:
+                flash("Informe o nome da categoria.", "error")
+            else:
+                try:
+                    with db() as connection:
+                        connection.execute("INSERT INTO categories(name,color) VALUES(?,?)", (name, color))
+                    flash("Categoria criada.", "success")
+                    return redirect(url_for("categories"))
+                except sqlite3.IntegrityError:
+                    flash("Essa categoria jÃ¡ existe.", "error")
+        with db() as connection:
+            rows = connection.execute(
+                """SELECT c.*, COUNT(t.id) transaction_count FROM categories c
+                   LEFT JOIN transactions t ON t.category_id=c.id GROUP BY c.id ORDER BY c.name"""
+            ).fetchall()
+        return render_template("categories.html", categories=rows)
+
+    @app.get("/api/summary")
+    def api_summary():
+        month = request.args.get("month", date.today().strftime("%Y-%m"))
+        with db() as connection:
+            row = connection.execute(
+                """SELECT COALESCE(SUM(CASE WHEN type='income' THEN amount_cents END),0) income,
+                          COALESCE(SUM(CASE WHEN type='expense' THEN amount_cents END),0) expense
+                   FROM transactions WHERE substr(occurred_on,1,7)=?""", (month,)
+            ).fetchone()
+        return jsonify({"month": month, "income_cents": row["income"], "expense_cents": row["expense"], "balance_cents": row["income"] - row["expense"]})
+
+    @app.get("/export")
+    def export_data():
+        with db() as connection:
+            payload = {
+                "exported_at": datetime.now().isoformat(timespec="seconds"),
+                "categories": [dict(r) for r in connection.execute("SELECT * FROM categories")],
+                "transactions": [dict(r) for r in connection.execute("SELECT * FROM transactions")],
+            }
+        response = app.response_class(json.dumps(payload, ensure_ascii=False, indent=2), mimetype="application/json")
+        response.headers["Content-Disposition"] = "attachment; filename=financas-backup.json"
+        return response
+
+    return app
+
+
+app = create_app()
+
+if __name__ == "__main__":
+    app.run(debug=True, host="127.0.0.1", port=5000)
+
