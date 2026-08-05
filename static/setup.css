@@ -1,0 +1,2 @@
+.auth-shell{width:min(560px,calc(100% - 32px))}.setup-form{grid-template-columns:1fr 1fr!important}.setup-form .wide{grid-column:1/-1}@media(max-width:560px){.setup-form{grid-template-columns:1fr!important}.setup-form .wide{grid-column:auto}}
+
