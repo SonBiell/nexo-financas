@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#090d18">
+  <meta name="csrf-token" content="{{ csrf_token() }}">
+  <title>{% block title %}Finanças{% endblock %} · Nexo</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='expenses.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='wallet.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='summary.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='dashboard-expenses.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='pro-dashboard.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='account.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='expense-watch-fix.css') }}">
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar">
+      <a class="brand" href="{{ url_for('dashboard') }}"><span class="brand-mark">N</span><span>Nexo<small>Finanças pessoais</small></span></a>
+      <nav aria-label="Principal">
+        <a class="{{ 'active' if request.endpoint == 'dashboard' }}" href="{{ url_for('dashboard') }}"><span>⌂</span> Visão geral</a>
+        <a class="{{ 'active' if request.endpoint in ['transactions','delete_transaction'] }}" href="{{ url_for('transactions') }}"><span>↔</span> Transações</a>
+        <a class="{{ 'active' if request.endpoint in ['expenses','pay_expense','restore_expense','delete_expense'] }}" href="{{ url_for('expenses') }}"><span>▤</span> Despesas</a>
+        <a class="{{ 'active' if request.endpoint == 'categories' }}" href="{{ url_for('categories') }}"><span>◇</span> Categorias</a>
+      </nav>
+      <a class="export" href="{{ url_for('export_data') }}">↓ Exportar backup JSON</a>
+      {% if logged_in %}<div class="account"><span class="account-avatar">{{ current_full_name[0]|upper }}</span><div class="account-name"><strong>{{ current_full_name }}</strong><small>@{{ current_username }} · sessão segura</small></div><form method="post" action="{{ url_for('logout') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="logout-button" aria-label="Encerrar sessão"><span>↪</span> Sair</button></form></div>{% endif %}
+      <p class="privacy">● Seus dados ficam neste dispositivo</p>
+    </aside>
+    <main>
+      <header class="mobile-header"><a class="brand" href="/"><span class="brand-mark">N</span>Nexo</a></header>
+      {% with messages = get_flashed_messages(with_categories=true) %}{% for category, message in messages %}<div class="toast {{ category }}">{{ message }}</div>{% endfor %}{% endwith %}
+      {% block content %}{% endblock %}
+    </main>
+    <nav class="bottom-nav" aria-label="Principal">
+      <a class="{{ 'active' if request.endpoint == 'dashboard' }}" href="{{ url_for('dashboard') }}">⌂<span>Resumo</span></a>
+      <a class="{{ 'active' if request.endpoint == 'transactions' }}" href="{{ url_for('transactions') }}">↔<span>Transações</span></a>
+      <a class="{{ 'active' if request.endpoint == 'expenses' }}" href="{{ url_for('expenses') }}">▤<span>Despesas</span></a>
+      <a class="{{ 'active' if request.endpoint == 'categories' }}" href="{{ url_for('categories') }}">◇<span>Categorias</span></a>
+    </nav>
+  </div>
+</body>
+<script src="{{ url_for('static', filename='security.js') }}"></script>
+</html>
+
