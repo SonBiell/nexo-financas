@@ -1,0 +1,12 @@
+{
+  "name": "Nexo Finanças Pessoais",
+  "short_name": "Nexo",
+  "description": "Controle privado de finanças pessoais.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#080c16",
+  "theme_color": "#090d18",
+  "icons": [{"src": "/static/icons/nexo.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable"}]
+}
+
