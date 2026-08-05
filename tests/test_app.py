@@ -42,6 +42,26 @@ class FinanceAppTest(unittest.TestCase):
         response = self.client.post("/categories", data={"name": "Saúde", "color": "#ef4444"}, follow_redirects=True)
         self.assertIn("Saúde".encode(), response.data)
 
+    def test_edit_and_delete_category_preserves_linked_records(self):
+        self.client.post("/categories", data={"name": "Lazer", "color": "#8b5cf6"})
+        connection = sqlite3.connect(self.db_file.name)
+        category_id = connection.execute("SELECT id FROM categories WHERE name='Lazer'").fetchone()[0]
+        connection.close()
+        self.client.post("/transactions", data={
+            "type": "income", "description": "Reembolso", "amount": "50,00",
+            "occurred_on": "2026-08-05", "category_id": str(category_id), "notes": "",
+        })
+        edited = self.client.post(f"/categories/{category_id}/edit", data={"name": "Diversão", "color": "#22c55e"}, follow_redirects=True)
+        self.assertIn("Diversão".encode(), edited.data)
+        deleted = self.client.post(f"/categories/{category_id}/delete", follow_redirects=True)
+        self.assertNotIn("Diversão".encode(), deleted.data)
+        self.assertIn(b"Reembolso", self.client.get("/transactions?period=all").data)
+
+    def test_pwa_manifest_is_available(self):
+        response = self.client.get("/static/manifest.webmanifest")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"Nexo", response.data)
+
     def test_expense_payment_restore_and_delete(self):
         self.client.post("/expenses", data={
             "description": "Notebook", "amount": "1440,00", "due_on": "2099-08-10",
@@ -106,3 +126,4 @@ class AuthenticationTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
