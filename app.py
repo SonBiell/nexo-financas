@@ -1,0 +1,328 @@
+from __future__ import annotations
+
+import json
+import os
+import re
+import secrets
+import sqlite3
+from datetime import date, datetime, timedelta
+from decimal import Decimal, InvalidOperation
+from pathlib import Path
+
+from flask import Flask, abort, flash, jsonify, redirect, render_template, request, session, url_for
+from werkzeug.security import check_password_hash, generate_password_hash
+from werkzeug.middleware.proxy_fix import ProxyFix
+
+
+BASE_DIR = Path(__file__).resolve().parent
+
+
+class ClosingConnection(sqlite3.Connection):
+    """Commit or roll back, then always release the local database file."""
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        try:
+            return super().__exit__(exc_type, exc_value, traceback)
+        finally:
+            self.close()
+
+
+def create_app(test_config: dict | None = None) -> Flask:
+    app = Flask(__name__)
+    production = os.environ.get("FINANCE_ENV") == "production"
+    secret_key = os.environ.get("FINANCE_SECRET")
+    if production and not secret_key:
+        raise RuntimeError("FINANCE_SECRET é obrigatória em produção")
+    app.config.from_mapping(
+        SECRET_KEY=secret_key or "local-development-key",
+        DATABASE=os.environ.get("DATABASE_PATH", str(BASE_DIR / "instance" / "financas.db")),
+        SESSION_COOKIE_HTTPONLY=True,
+        SESSION_COOKIE_SAMESITE="Lax",
+        SESSION_COOKIE_SECURE=production or os.environ.get("FINANCE_HTTPS", "0") == "1",
+        PERMANENT_SESSION_LIFETIME=timedelta(hours=12),
+    )
+    if test_config:
+        app.config.update(test_config)
+    if production:
+        app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
+
+    Path(app.config["DATABASE"]).parent.mkdir(parents=True, exist_ok=True)
+
+    def db() -> sqlite3.Connection:
+        connection = sqlite3.connect(app.config["DATABASE"], factory=ClosingConnection)
+        connection.row_factory = sqlite3.Row
+        connection.execute("PRAGMA foreign_keys = ON")
+        return connection
+
+    def init_db() -> None:
+        with db() as connection:
+            connection.executescript((BASE_DIR / "schema.sql").read_text(encoding="utf-8"))
+            existing = {row["name"] for row in connection.execute("PRAGMA table_info(transactions)")}
+            migrations = {
+                "due_on": "ALTER TABLE transactions ADD COLUMN due_on TEXT",
+                "installment_count": "ALTER TABLE transactions ADD COLUMN installment_count INTEGER NOT NULL DEFAULT 1",
+                "installments_paid": "ALTER TABLE transactions ADD COLUMN installments_paid INTEGER NOT NULL DEFAULT 0",
+                "paid_at": "ALTER TABLE transactions ADD COLUMN paid_at TEXT",
+                "source": "ALTER TABLE transactions ADD COLUMN source TEXT NOT NULL DEFAULT 'manual'",
+                "expense_id": "ALTER TABLE transactions ADD COLUMN expense_id INTEGER",
+            }
+            for column, statement in migrations.items():
+                if column not in existing:
+                    connection.execute(statement)
+            user_columns = {row["name"] for row in connection.execute("PRAGMA table_info(users)")}
+            user_migrations = {
+                "full_name": "ALTER TABLE users ADD COLUMN full_name TEXT NOT NULL DEFAULT ''",
+                "document": "ALTER TABLE users ADD COLUMN document TEXT NOT NULL DEFAULT ''",
+                "birth_date": "ALTER TABLE users ADD COLUMN birth_date TEXT NOT NULL DEFAULT ''",
+                "email": "ALTER TABLE users ADD COLUMN email TEXT NOT NULL DEFAULT ''",
+            }
+            for column, statement in user_migrations.items():
+                if column not in user_columns:
+                    connection.execute(statement)
+            migrated = connection.execute("SELECT value FROM app_metadata WHERE key='expenses_split_v1'").fetchone()
+            if not migrated:
+                connection.execute(
+                    """INSERT INTO expenses(description, amount_cents, category_id, due_on, installment_count, installments_paid, notes, paid_at, created_at)
+                       SELECT description, amount_cents, category_id, COALESCE(due_on,occurred_on), installment_count,
+                              installments_paid, notes, paid_at, created_at FROM transactions WHERE type='expense'"""
+                )
+                connection.execute("DELETE FROM transactions WHERE type='expense'")
+                connection.execute("INSERT INTO app_metadata(key,value) VALUES('expenses_split_v1','done')")
+            connection.executemany(
+                "INSERT OR IGNORE INTO categories (name, color) VALUES (?, ?)",
+                [("Moradia", "#8b5cf6"), ("Alimentação", "#22c55e"), ("Transporte", "#38bdf8"), ("Salário", "#f59e0b")],
+            )
+
+    init_db()
+
+    def csrf_token() -> str:
+        if "csrf_token" not in session:
+            session["csrf_token"] = secrets.token_urlsafe(32)
+        return session["csrf_token"]
+
+    @app.before_request
+    def protect_application():
+        if app.config.get("TESTING"):
+            return None
+        endpoint = request.endpoint or ""
+        public_endpoints = {"login", "setup", "static", "health"}
+        if request.method == "POST":
+            received = request.form.get("csrf_token") or request.headers.get("X-CSRF-Token")
+            if not received or not secrets.compare_digest(received, session.get("csrf_token", "")):
+                abort(400, "Formulário expirado. Atualize a página e tente novamente.")
+        with db() as connection:
+            has_user = connection.execute("SELECT 1 FROM users LIMIT 1").fetchone() is not None
+        if not has_user and endpoint not in {"setup", "static", "health"}:
+            return redirect(url_for("setup"))
+        if has_user and endpoint == "setup":
+            return redirect(url_for("login"))
+        if endpoint not in public_endpoints and "user_id" not in session:
+            return redirect(url_for("login", next=request.path))
+        return None
+
+    @app.after_request
+    def security_headers(response):
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+        response.headers["Content-Security-Policy"] = "default-src 'self'; style-src 'self' https://fonts.googleapis.com 'unsafe-inline'; font-src https://fonts.gstatic.com; script-src 'self' 'unsafe-inline'; img-src 'self' data:; form-action 'self'; frame-ancestors 'none'"
+        if production:
+            response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        return response
+
+    @app.get("/health")
+    def health():
+        try:
+            with db() as connection:
+                connection.execute("SELECT 1").fetchone()
+            return jsonify({"status": "ok"})
+        except sqlite3.Error:
+            return jsonify({"status": "unavailable"}), 503
+
+    @app.context_processor
+    def inject_security():
+        return {"csrf_token": csrf_token, "logged_in": "user_id" in session, "current_username": session.get("username"), "current_full_name": session.get("full_name", session.get("username"))}
+
+    @app.route("/setup", methods=["GET", "POST"])
+    def setup():
+        if request.method == "POST":
+            full_name = " ".join(request.form.get("full_name", "").split())
+            document = re.sub(r"[^0-9A-Za-z]", "", request.form.get("document", "")).upper()
+            birth_date = request.form.get("birth_date", "")
+            email = request.form.get("email", "").strip().lower()
+            username = request.form.get("username", "").strip()
+            password = request.form.get("password", "")
+            confirmation = request.form.get("password_confirmation", "")
+            try:
+                born = datetime.strptime(birth_date, "%Y-%m-%d").date()
+                valid_birth_date = born < date.today()
+            except ValueError:
+                valid_birth_date = False
+            if len(full_name) < 5:
+                flash("Informe seu nome completo.", "error")
+            elif len(document) < 7 or len(document) > 14:
+                flash("Informe um RG ou CPF válido.", "error")
+            elif not valid_birth_date:
+                flash("Informe uma data de nascimento válida.", "error")
+            elif not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
+                flash("Informe um endereço de e-mail válido.", "error")
+            elif len(username) < 3:
+                flash("O usuário deve ter pelo menos 3 caracteres.", "error")
+            elif len(password) < 8:
+                flash("A senha deve ter pelo menos 8 caracteres.", "error")
+            elif password != confirmation:
+                flash("As senhas não coincidem.", "error")
+            else:
+                with db() as connection:
+                    cursor = connection.execute("""INSERT INTO users(full_name,document,birth_date,email,username,password_hash)
+                                                   VALUES(?,?,?,?,?,?)""", (full_name, document, birth_date, email, username, generate_password_hash(password)))
+                session.clear()
+                session["user_id"], session["username"], session["full_name"] = cursor.lastrowid, username, full_name
+                session.permanent = True
+                flash("Acesso protegido criado com sucesso.", "success")
+                return redirect(url_for("dashboard"))
+        return render_template("setup.html")
+
+    @app.route("/login", methods=["GET", "POST"])
+    def login():
+        if "user_id" in session:
+            return redirect(url_for("dashboard"))
+        if request.method == "POST":
+            username = request.form.get("username", "").strip()
+            password = request.form.get("password", "")
+            with db() as connection:
+                user = connection.execute("SELECT * FROM users WHERE username=?", (username,)).fetchone()
+                if user and check_password_hash(user["password_hash"], password):
+                    connection.execute("UPDATE users SET last_login_at=? WHERE id=?", (datetime.now().isoformat(timespec="seconds"), user["id"]))
+                    session.clear()
+                    session["user_id"], session["username"], session["full_name"] = user["id"], user["username"], user["full_name"] or user["username"]
+                    session.permanent = True
+                    destination = request.args.get("next", "")
+                    return redirect(destination if destination.startswith("/") and not destination.startswith("//") else url_for("dashboard"))
+            flash("Usuário ou senha inválidos.", "error")
+        return render_template("login.html")
+
+    @app.post("/logout")
+    def logout():
+        session.clear()
+        flash("Sessão encerrada com segurança.", "success")
+        return redirect(url_for("login"))
+
+    @app.template_filter("money")
+    def money(value: int | None) -> str:
+        amount = (value or 0) / 100
+        return f"R$ {amount:,.2f}".replace(",", "_").replace(".", ",").replace("_", ".")
+
+    @app.context_processor
+    def inject_year():
+        return {"current_year": date.today().year}
+
+    @app.get("/")
+    def dashboard():
+        month = request.args.get("month", date.today().strftime("%Y-%m"))
+        try:
+            datetime.strptime(month, "%Y-%m")
+        except ValueError:
+            month = date.today().strftime("%Y-%m")
+        today = date.today()
+        due_soon_limit = today + timedelta(days=7)
+        with db() as connection:
+            totals = connection.execute(
+                """SELECT COALESCE(SUM(CASE WHEN type='income' THEN amount_cents END),0) income,
+                          COALESCE(SUM(CASE WHEN type='expense' THEN amount_cents END),0) expense
+                   FROM transactions WHERE substr(occurred_on,1,7)=?""", (month,)
+            ).fetchone()
+            recent = connection.execute(
+                """SELECT t.*, c.name category_name, c.color FROM transactions t
+                   LEFT JOIN categories c ON c.id=t.category_id
+                   WHERE substr(t.occurred_on,1,7)=? ORDER BY t.occurred_on DESC, t.id DESC LIMIT 8""", (month,)
+            ).fetchall()
+            breakdown = connection.execute(
+                """SELECT COALESCE(c.name,'Sem categoria') name, COALESCE(c.color,'#64748b') color,
+                          SUM(t.amount_cents) total
+                   FROM transactions t LEFT JOIN categories c ON c.id=t.category_id
+                   WHERE t.type='expense' AND substr(t.occurred_on,1,7)=?
+                   GROUP BY c.id ORDER BY total DESC""", (month,)
+            ).fetchall()
+            wallet = connection.execute(
+                "SELECT COALESCE(SUM(CASE WHEN type='income' THEN amount_cents ELSE -amount_cents END),0) balance FROM transactions"
+            ).fetchone()["balance"]
+            expense_overview = connection.execute(
+                """SELECT
+                     COUNT(CASE WHEN paid_at IS NULL THEN 1 END) open_count,
+                     COALESCE(SUM(CASE WHEN paid_at IS NULL THEN amount_cents ELSE 0 END),0) open_total,
+                     COUNT(CASE WHEN paid_at IS NULL AND due_on < ? THEN 1 END) overdue_count,
+                     COALESCE(SUM(CASE WHEN paid_at IS NULL AND due_on < ? THEN amount_cents ELSE 0 END),0) overdue_total,
+                     COUNT(CASE WHEN paid_at IS NULL AND due_on BETWEEN ? AND ? THEN 1 END) due_soon_count
+                   FROM expenses""", (today.isoformat(), today.isoformat(), today.isoformat(), due_soon_limit.isoformat())
+            ).fetchone()
+            urgent_expenses = connection.execute(
+                """SELECT e.*, c.name category_name, c.color FROM expenses e
+                   LEFT JOIN categories c ON c.id=e.category_id
+                   WHERE e.paid_at IS NULL AND e.due_on <= ?
+                   ORDER BY CASE WHEN e.due_on < ? THEN 0 ELSE 1 END, e.due_on, e.id LIMIT 6""",
+                (due_soon_limit.isoformat(), today.isoformat()),
+            ).fetchall()
+        return render_template("dashboard.html", month=month, totals=totals, recent=recent, breakdown=breakdown, wallet=wallet, expense_overview=expense_overview, urgent_expenses=urgent_expenses, today=today.isoformat())
+
+    @app.route("/transactions", methods=["GET", "POST"])
+    def transactions():
+        if request.method == "POST":
+            try:
+                kind = request.form["type"]
+                if kind not in {"income", "expense"}:
+                    raise ValueError("Tipo inválido")
+                amount = Decimal(request.form["amount"].replace(",", "."))
+                if amount <= 0:
+                    raise ValueError("O valor deve ser positivo")
+                amount_cents = int(amount * 100)
+                description = request.form["description"].strip()
+                if not description:
+                    raise ValueError("Informe uma descrição")
+                occurred_on = datetime.strptime(request.form["occurred_on"], "%Y-%m-%d").date().isoformat()
+                category_id = request.form.get("category_id") or None
+                with db() as connection:
+                    connection.execute(
+                        "INSERT INTO transactions(description, amount_cents, type, category_id, occurred_on, notes, source) VALUES(?,?,?,?,?,?, 'manual')",
+                        (description, amount_cents, kind, category_id, occurred_on, request.form.get("notes", "").strip()),
+                    )
+                flash("Transação salva com sucesso.", "success")
+                return redirect(url_for("transactions"))
+            except (ValueError, InvalidOperation, KeyError) as exc:
+                flash(str(exc) or "Confira os dados informados.", "error")
+
+        kind_filter, period = request.args.get("type", "all"), request.args.get("period", "month")
+        reference = date.today()
+        conditions, params = [], []
+        if kind_filter in {"income", "expense"}:
+            conditions.append("t.type=?"); params.append(kind_filter)
+        if period == "day":
+            conditions.append("t.occurred_on=?"); params.append(reference.isoformat())
+        elif period == "week":
+            start = reference - timedelta(days=reference.weekday())
+            conditions.append("t.occurred_on BETWEEN ? AND ?"); params.extend([start.isoformat(), (start + timedelta(days=6)).isoformat()])
+        elif period == "month":
+            conditions.append("substr(t.occurred_on,1,7)=?"); params.append(reference.strftime("%Y-%m"))
+        sql_filter = "WHERE " + " AND ".join(conditions) if conditions else ""
+        with db() as connection:
+            rows = connection.execute(
+                f"""SELECT t.*, c.name category_name, c.color FROM transactions t
+                    LEFT JOIN categories c ON c.id=t.category_id {sql_filter}
+                    ORDER BY t.occurred_on DESC, t.id DESC""", tuple(params)
+            ).fetchall()
+            categories = connection.execute("SELECT * FROM categories ORDER BY name").fetchall()
+        return render_template("transactions.html", transactions=rows, categories=categories, today=date.today().isoformat(), kind_filter=kind_filter, period=period)
+
+    @app.route("/expenses", methods=["GET", "POST"])
+    def expenses():
+        if request.method == "POST":
+            try:
+                amount = Decimal(request.form["amount"].replace(",", "."))
+                installments = int(request.form.get("installment_count", 1))
+                description = request.form["description"].strip()
+                due_on = datetime.strptime(request.form["due_on"], "%Y-%m-%d").date().isoformat()
+                if not description or amount <= 0 or not 1 <= installments <= 360…11682 tokens truncated…003c/span><b>{{ item.total|money }}</b></div><div class="bar"><i style="width:{{ (item.total / max_total * 100)|round }}%;background:{{ item.color }}"></i></div></div>{% endfor %}</div>{% else %}<div class="empty compact"><span>◇</span><p>Nenhuma despesa neste mês.</p></div>{% endif %}
+  </section>
+</div>
+{% endblock %}
