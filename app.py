@@ -450,21 +450,22 @@ def create_app(test_config: dict | None = None) -> Flask:
     def expenses():
         if request.method == "POST":
             try:
-                amount = Decimal(request.form["amount"].replace(",", "."))
+                installment_amount = Decimal(request.form["amount"].replace(",", "."))
                 installments = int(request.form.get("installment_count", 1))
                 description = request.form["description"].strip()
                 due_on = datetime.strptime(request.form["due_on"], "%Y-%m-%d").date().isoformat()
                 recurring_monthly = request.form.get("recurring_monthly") == "1"
                 if recurring_monthly:
                     installments = 1
-                if not description or amount <= 0 or not 1 <= installments <= 360:
+                if not description or installment_amount <= 0 or not 1 <= installments <= 360:
                     raise ValueError("Confira a descrição, o valor e as parcelas.")
+                total_cents = int(installment_amount * 100) * installments
                 with db() as connection:
                     connection.execute("""INSERT INTO expenses(
                                           description,amount_cents,category_id,due_on,installment_count,notes,
                                           recurring_monthly,recurrence_key,recurrence_day)
                                           VALUES(?,?,?,?,?,?,?,?,?)""", (
-                                          description, int(amount * 100), request.form.get("category_id") or None,
+                                          description, total_cents, request.form.get("category_id") or None,
                                           due_on, installments, request.form.get("notes", "").strip(),
                                           int(recurring_monthly), secrets.token_urlsafe(16) if recurring_monthly else None,
                                           int(due_on[-2:]) if recurring_monthly else None))
@@ -498,28 +499,33 @@ def create_app(test_config: dict | None = None) -> Flask:
             if not expense or expense["paid_at"]:
                 flash("Essa despesa não está disponível para pagamento.", "error")
                 return redirect(url_for("expenses"))
-            if balance < expense["amount_cents"]:
-                flash(f"Saldo insuficiente. Faltam {money(expense['amount_cents'] - balance)}.", "error")
+            installment_amount = round(expense["amount_cents"] / expense["installment_count"])
+            if balance < installment_amount:
+                flash(f"Saldo insuficiente. Faltam {money(installment_amount - balance)}.", "error")
                 return redirect(url_for("expenses"))
             now = datetime.now()
-            connection.execute("UPDATE expenses SET paid_at=?, installments_paid=installment_count WHERE id=?", (now.isoformat(timespec="seconds"), transaction_id))
+            next_installment = expense["installments_paid"] + 1
+            paid_at = now.isoformat(timespec="seconds") if next_installment >= expense["installment_count"] else None
+            connection.execute("UPDATE expenses SET paid_at=?, installments_paid=? WHERE id=?", (paid_at, next_installment, transaction_id))
             connection.execute("""INSERT INTO transactions(description,amount_cents,type,category_id,occurred_on,notes,source,expense_id)
-                                  VALUES(?,?,'expense',?,?,?,'expense_payment',?)""", (f"Pagamento: {expense['description']}", expense["amount_cents"], expense["category_id"], now.date().isoformat(), "Pagamento de despesa", transaction_id))
-        flash("Despesa marcada como paga.", "success")
+                                  VALUES(?,?,'expense',?,?,?,'expense_payment',?)""", (f"Pagamento: {expense['description']} (parcela {next_installment}/{expense['installment_count']})", installment_amount, expense["category_id"], now.date().isoformat(), "Pagamento de parcela", transaction_id))
+        flash("Parcela paga com sucesso.", "success")
         return redirect(url_for("expenses"))
 
     @app.post("/expenses/<int:transaction_id>/restore")
     def restore_expense(transaction_id: int):
         with db() as connection:
             expense = connection.execute("SELECT * FROM expenses WHERE id=?", (transaction_id,)).fetchone()
-            if not expense or not expense["paid_at"]:
+            if not expense or expense["installments_paid"] <= 0:
                 flash("A despesa ainda não foi paga.", "error")
                 return redirect(url_for("expenses"))
             now = datetime.now()
-            connection.execute("UPDATE expenses SET paid_at=NULL, installments_paid=0 WHERE id=?", (transaction_id,))
+            restored_installment = expense["installments_paid"]
+            installment_amount = round(expense["amount_cents"] / expense["installment_count"])
+            connection.execute("UPDATE expenses SET paid_at=NULL, installments_paid=? WHERE id=?", (restored_installment - 1, transaction_id))
             connection.execute("""INSERT INTO transactions(description,amount_cents,type,category_id,occurred_on,notes,source,expense_id)
-                                  VALUES(?,?,'income',?,?,?,'expense_restore',?)""", (f"Estorno: {expense['description']}", expense["amount_cents"], expense["category_id"], now.date().isoformat(), "Restauração de despesa", transaction_id))
-        flash("Despesa restaurada para pagamento.", "success")
+                                  VALUES(?,?,'income',?,?,?,'expense_restore',?)""", (f"Estorno: {expense['description']} (parcela {restored_installment}/{expense['installment_count']})", installment_amount, expense["category_id"], now.date().isoformat(), "Restauração de parcela", transaction_id))
+        flash("Parcela restaurada com sucesso.", "success")
         return redirect(url_for("expenses"))
 
     @app.post("/expenses/<int:transaction_id>/delete")
