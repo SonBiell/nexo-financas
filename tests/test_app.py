@@ -14,7 +14,7 @@ class FinanceAppTest(unittest.TestCase):
         self.client = self.app.test_client()
 
     def test_dashboard_loads(self):
-        response = self.client.get("/")
+        response = self.client.get("/dashboard")
         self.assertEqual(response.status_code, 200)
         self.assertIn("Visão geral".encode(), response.data)
         self.assertIn(b"dashboard-recent", response.data)
@@ -25,7 +25,7 @@ class FinanceAppTest(unittest.TestCase):
             "description": "Conta vencida", "amount": "99,90", "due_on": "2020-01-01",
             "installment_count": "1", "category_id": "", "notes": "",
         })
-        response = self.client.get("/")
+        response = self.client.get("/dashboard")
         self.assertIn("Visão das despesas".encode(), response.data)
         self.assertIn(b"Conta vencida", response.data)
         self.assertIn("Atrasada".encode(), response.data)
@@ -130,28 +130,60 @@ class AuthenticationTest(unittest.TestCase):
             return session["csrf_token"]
 
     def test_setup_login_and_protected_dashboard(self):
-        self.assertEqual(self.client.get("/").location, "/setup")
+        landing = self.client.get("/")
+        self.assertEqual(landing.status_code, 200)
+        self.assertIn(b"Criar conta", landing.data)
+        self.assertIn(b"remember", landing.data)
         self.client.get("/setup")
         response = self.client.post("/setup", data={
             "csrf_token": self.token(), "full_name": "Thiago Silva", "document": "123.456.789-00",
             "birth_date": "1990-05-10", "email": "thiago@example.com", "username": "thiago",
             "password": "segura123", "password_confirmation": "segura123",
         })
-        self.assertEqual(response.location, "/")
-        dashboard = self.client.get("/")
+        self.assertEqual(response.location, "/dashboard")
+        dashboard = self.client.get("/dashboard")
         self.assertIn(b"mobile-logout", dashboard.data)
         connection = sqlite3.connect(self.db_file.name)
         stored = connection.execute("SELECT password_hash FROM users").fetchone()[0]
         connection.close()
         self.assertNotIn("segura123", stored)
-        self.client.get("/")
+        self.client.get("/dashboard")
         self.client.post("/logout", data={"csrf_token": self.token()})
-        self.assertEqual(self.client.get("/").location, "/login?next=/")
+        self.assertEqual(self.client.get("/dashboard").location, "/login?next=/dashboard")
         self.client.get("/login")
         invalid = self.client.post("/login", data={"csrf_token": self.token(), "username": "thiago", "password": "errada"}, follow_redirects=True)
         self.assertIn("inválidos".encode(), invalid.data)
         valid = self.client.post("/login", data={"csrf_token": self.token(), "username": "thiago", "password": "segura123"})
-        self.assertEqual(valid.location, "/")
+        self.assertEqual(valid.location, "/dashboard")
+
+    def test_financial_data_is_private_per_user(self):
+        def register(suffix):
+            self.client.get("/setup")
+            return self.client.post("/setup", data={
+                "csrf_token": self.token(), "full_name": f"Usuário Completo {suffix}",
+                "document": f"1234567890{suffix}", "birth_date": "1990-05-10",
+                "email": f"user{suffix}@example.com", "username": f"user{suffix}",
+                "password": "segura123", "password_confirmation": "segura123",
+            })
+
+        register("1")
+        self.client.get("/transactions")
+        self.client.post("/transactions", data={
+            "csrf_token": self.token(), "type": "income", "description": "Privado do usuário 1",
+            "amount": "500,00", "occurred_on": date.today().isoformat(), "category_id": "", "notes": "",
+        })
+        self.client.get("/dashboard")
+        self.client.post("/logout", data={"csrf_token": self.token()})
+        register("2")
+        second_view = self.client.get("/transactions?period=all")
+        self.assertNotIn("Privado do usuário 1".encode(), second_view.data)
+        self.client.get("/transactions")
+        self.client.post("/transactions/1/delete", data={"csrf_token": self.token()})
+        self.client.get("/dashboard")
+        self.client.post("/logout", data={"csrf_token": self.token()})
+        self.client.get("/")
+        self.client.post("/", data={"csrf_token": self.token(), "username": "user1", "password": "segura123"})
+        self.assertIn("Privado do usuário 1".encode(), self.client.get("/transactions?period=all").data)
 
 
 class NativeApiAuthenticationTest(unittest.TestCase):
