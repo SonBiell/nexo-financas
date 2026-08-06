@@ -41,7 +41,7 @@
       <p class="privacy">● Seus dados ficam neste dispositivo</p>
     </aside>
     <main>
-      <header class="mobile-header"><a class="brand" href="/"><span class="brand-mark">N</span>Nexo</a></header>
+      <header class="mobile-header"><a class="brand" href="/"><span class="brand-mark">N</span>Nexo</a>{% if logged_in %}<form class="mobile-logout" method="post" action="{{ url_for('logout') }}" data-confirm="Deseja encerrar sua sessão no Nexo?"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><span class="mobile-user-avatar" aria-hidden="true">{{ current_full_name[0]|upper }}</span><button aria-label="Encerrar sessão"><span>↪</span><span class="mobile-logout-label">Sair</span></button></form>{% endif %}</header>
       {% with messages = get_flashed_messages(with_categories=true) %}{% for category, message in messages %}<div class="toast {{ category }}">{{ message }}</div>{% endfor %}{% endwith %}
       {% block content %}{% endblock %}
     </main>
