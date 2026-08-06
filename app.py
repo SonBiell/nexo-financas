@@ -342,7 +342,93 @@ def create_app(test_config: dict | None = None) -> Flask:
                 """SELECT COUNT(CASE WHEN paid_at IS NULL THEN 1 END) pending,
                           COUNT(CASE WHEN paid_at IS NULL AND due_on < ? THEN 1 END) overdue,
                           COUNT(CASE WHEN paid_at IS NULL AND due_on BETWEEN ? AND ? THEN 1 END) due_soon
-                   F…1301 tokens truncated… user["username"], user["full_name"] or user["username"]
+                   FROM native_expenses WHERE user_id=?""",
+                (today, today, due_limit, user["id"]),
+            ).fetchone()
+            recent = connection.execute(
+                """SELECT t.id,t.description,t.amount_cents,t.type,t.occurred_on,
+                          COALESCE(c.name,'Sem categoria') category_name,COALESCE(c.color,'#64748b') color
+                   FROM native_transactions t LEFT JOIN native_categories c ON c.id=t.category_id
+                   WHERE t.user_id=? ORDER BY t.occurred_on DESC,t.id DESC LIMIT 6""",
+                (user["id"],),
+            ).fetchall()
+        return jsonify({
+            "month": month,
+            "user": {"id": user["id"], "full_name": user["full_name"], "username": user["username"]},
+            "balance_cents": balance,
+            "income_cents": totals["income"],
+            "expense_cents": totals["expense"],
+            "pending_expenses": expense_counts["pending"],
+            "overdue_expenses": expense_counts["overdue"],
+            "due_soon_expenses": expense_counts["due_soon"],
+            "recent_transactions": [dict(row) for row in recent],
+        })
+
+    @app.context_processor
+    def inject_security():
+        return {"csrf_token": csrf_token, "logged_in": "user_id" in session, "current_username": session.get("username"), "current_full_name": session.get("full_name", session.get("username"))}
+
+    @app.route("/register", methods=["GET", "POST"])
+    @app.route("/setup", methods=["GET", "POST"])
+    def setup():
+        if request.method == "POST":
+            full_name = " ".join(request.form.get("full_name", "").split())
+            document = re.sub(r"[^0-9A-Za-z]", "", request.form.get("document", "")).upper()
+            birth_date = request.form.get("birth_date", "")
+            email = request.form.get("email", "").strip().lower()
+            username = request.form.get("username", "").strip()
+            password = request.form.get("password", "")
+            confirmation = request.form.get("password_confirmation", "")
+            try:
+                born = datetime.strptime(birth_date, "%Y-%m-%d").date()
+                valid_birth_date = born < date.today()
+            except ValueError:
+                valid_birth_date = False
+            if len(full_name) < 5:
+                flash("Informe seu nome completo.", "error")
+            elif len(document) < 7 or len(document) > 14:
+                flash("Informe um RG ou CPF vÃ¡lido.", "error")
+            elif not valid_birth_date:
+                flash("Informe uma data de nascimento vÃ¡lida.", "error")
+            elif not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
+                flash("Informe um endereÃ§o de e-mail vÃ¡lido.", "error")
+            elif len(username) < 3:
+                flash("O usuÃ¡rio deve ter pelo menos 3 caracteres.", "error")
+            elif len(password) < 8:
+                flash("A senha deve ter pelo menos 8 caracteres.", "error")
+            elif password != confirmation:
+                flash("As senhas nÃ£o coincidem.", "error")
+            else:
+                try:
+                    with db() as connection:
+                        cursor = connection.execute("""INSERT INTO users(full_name,document,birth_date,email,username,password_hash)
+                                                       VALUES(?,?,?,?,?,?)""", (full_name, document, birth_date, email, username, generate_password_hash(password)))
+                        connection.executemany("INSERT INTO categories(user_id,name,color) VALUES(?,?,?)", [
+                            (cursor.lastrowid, "Moradia", "#8b5cf6"), (cursor.lastrowid, "AlimentaÃ§Ã£o", "#22c55e"),
+                            (cursor.lastrowid, "Transporte", "#38bdf8"), (cursor.lastrowid, "SalÃ¡rio", "#f59e0b")])
+                    session.clear()
+                    session["user_id"], session["username"], session["full_name"] = cursor.lastrowid, username, full_name
+                    session.permanent = False
+                    flash("Conta criada com sucesso. Seus dados financeiros sÃ£o privados.", "success")
+                    return redirect(url_for("dashboard"))
+                except sqlite3.IntegrityError:
+                    flash("Este e-mail ou nome de usuÃ¡rio jÃ¡ estÃ¡ em uso.", "error")
+        return render_template("setup.html")
+
+    @app.route("/", methods=["GET", "POST"])
+    @app.route("/login", methods=["GET", "POST"])
+    def login():
+        if "user_id" in session:
+            return redirect(url_for("dashboard"))
+        if request.method == "POST":
+            username = request.form.get("username", "").strip()
+            password = request.form.get("password", "")
+            with db() as connection:
+                user = connection.execute("SELECT * FROM users WHERE username=?", (username,)).fetchone()
+                if user and check_password_hash(user["password_hash"], password):
+                    connection.execute("UPDATE users SET last_login_at=? WHERE id=?", (datetime.now().isoformat(timespec="seconds"), user["id"]))
+                    session.clear()
+                    session["user_id"], session["username"], session["full_name"] = user["id"], user["username"], user["full_name"] or user["username"]
                     session.permanent = request.form.get("remember") == "1"
                     destination = request.args.get("next", "")
                     return redirect(destination if destination.startswith("/") and not destination.startswith("//") else url_for("dashboard"))
