@@ -110,6 +110,8 @@ class AuthenticationTest(unittest.TestCase):
             "password": "segura123", "password_confirmation": "segura123",
         })
         self.assertEqual(response.location, "/")
+        dashboard = self.client.get("/")
+        self.assertIn(b"mobile-logout", dashboard.data)
         connection = sqlite3.connect(self.db_file.name)
         stored = connection.execute("SELECT password_hash FROM users").fetchone()[0]
         connection.close()
