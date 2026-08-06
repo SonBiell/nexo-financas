@@ -17,6 +17,9 @@ CREATE TABLE IF NOT EXISTS transactions (
   installment_count INTEGER NOT NULL DEFAULT 1 CHECK(installment_count > 0),
   installments_paid INTEGER NOT NULL DEFAULT 0 CHECK(installments_paid >= 0),
   paid_at TEXT,
+  recurring_monthly INTEGER NOT NULL DEFAULT 0,
+  recurrence_key TEXT,
+  recurrence_day INTEGER,
   source TEXT NOT NULL DEFAULT 'manual',
   expense_id INTEGER,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
