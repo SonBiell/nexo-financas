@@ -1,0 +1,8 @@
+:root{--bg:#071015;--surface:#0d1820;--surface2:#13232c;--line:#243640;--text:#f2f8f8;--muted:#8fa6b2;--violet:#14b8a6;--violet2:#0f766e;--green:#4ade80;--red:#fb7185}
+body{background:radial-gradient(circle at 82% 0,#12313a 0,transparent 32%),var(--bg)}
+.sidebar{background:#0a1218}.brand-mark{padding:5px;background:#0c1c24;box-shadow:0 8px 25px #0f766e44}.brand-mark img,.auth-mark img{display:block;width:100%;height:100%;object-fit:contain}
+.sidebar nav a:hover,.sidebar nav a.active{background:#14b8a622;color:#5eead4}.eyebrow,.panel-head a{color:#5eead4!important}
+.metric.featured{background:linear-gradient(130deg,#0f766e,#155e75)}.button,.auth-card button{background:linear-gradient(135deg,#14b8a6,#0f766e)}
+input:focus,select:focus,textarea:focus{border-color:#14b8a6}.segmented input:checked+span{background:#14b8a628;border-color:#14b8a6;color:#99f6e4}
+.auth-mark{padding:5px;background:#0c1c24!important;box-shadow:0 8px 24px #0f766e55!important}.auth-card{background:linear-gradient(145deg,#12232b,#0a151b)!important}.auth-switch a{color:#5eead4!important}
+@media(max-width:850px){.bottom-nav a.active{color:#5eead4}}
