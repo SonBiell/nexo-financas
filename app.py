@@ -344,7 +344,42 @@ def create_app(test_config: dict | None = None) -> Flask:
             elif not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
                 flash("Informe um endereço de e-mail válido.", "error")
             elif len(username) < 3:
-                flash("O usuário d…582 tokens truncated…d"], session["username"], session["full_name"] = user["id"], user["username"], user["full_name"] or user["username"]
+                flash("O usuário deve ter pelo menos 3 caracteres.", "error")
+            elif len(password) < 8:
+                flash("A senha deve ter pelo menos 8 caracteres.", "error")
+            elif password != confirmation:
+                flash("As senhas não coincidem.", "error")
+            else:
+                try:
+                    with db() as connection:
+                        cursor = connection.execute("""INSERT INTO users(full_name,document,birth_date,email,username,password_hash)
+                                                       VALUES(?,?,?,?,?,?)""", (full_name, document, birth_date, email, username, generate_password_hash(password)))
+                        connection.executemany("INSERT INTO categories(user_id,name,color) VALUES(?,?,?)", [
+                            (cursor.lastrowid, "Moradia", "#8b5cf6"), (cursor.lastrowid, "Alimentação", "#22c55e"),
+                            (cursor.lastrowid, "Transporte", "#38bdf8"), (cursor.lastrowid, "Salário", "#f59e0b")])
+                    session.clear()
+                    session["user_id"], session["username"], session["full_name"] = cursor.lastrowid, username, full_name
+                    session.permanent = False
+                    flash("Conta criada com sucesso. Seus dados financeiros são privados.", "success")
+                    return redirect(url_for("dashboard"))
+                except sqlite3.IntegrityError:
+                    flash("Este e-mail ou nome de usuário já está em uso.", "error")
+        return render_template("setup.html")
+
+    @app.route("/", methods=["GET", "POST"])
+    @app.route("/login", methods=["GET", "POST"])
+    def login():
+        if "user_id" in session:
+            return redirect(url_for("dashboard"))
+        if request.method == "POST":
+            username = request.form.get("username", "").strip()
+            password = request.form.get("password", "")
+            with db() as connection:
+                user = connection.execute("SELECT * FROM users WHERE username=?", (username,)).fetchone()
+                if user and check_password_hash(user["password_hash"], password):
+                    connection.execute("UPDATE users SET last_login_at=? WHERE id=?", (datetime.now().isoformat(timespec="seconds"), user["id"]))
+                    session.clear()
+                    session["user_id"], session["username"], session["full_name"] = user["id"], user["username"], user["full_name"] or user["username"]
                     session.permanent = request.form.get("remember") == "1"
                     destination = request.args.get("next", "")
                     return redirect(destination if destination.startswith("/") and not destination.startswith("//") else url_for("dashboard"))
@@ -668,4 +703,3 @@ app = create_app()
 
 if __name__ == "__main__":
     app.run(debug=True, host="127.0.0.1", port=5000)
-
