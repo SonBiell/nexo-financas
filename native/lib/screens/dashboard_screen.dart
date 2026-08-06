@@ -23,7 +23,8 @@ String money(dynamic cents) {
 
 class DashboardScreen extends StatefulWidget {
   final Map<String, dynamic> user;
-  const DashboardScreen({super.key, required this.user});
+  final Map<String, dynamic>? initialData;
+  const DashboardScreen({super.key, required this.user, this.initialData});
   @override
   State<DashboardScreen> createState() => _DashboardScreenState();
 }
@@ -37,7 +38,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
   @override
   void initState() {
     super.initState();
-    load();
+    if (widget.initialData != null) {
+      data = widget.initialData;
+      loading = false;
+    } else {
+      load();
+    }
   }
 
   Future<void> load() async {
@@ -67,7 +73,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final pages = [
+    final pages = <Widget>[
       loading
           ? const Center(child: CircularProgressIndicator())
           : error != null
@@ -97,13 +103,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
             child: ColoredBox(
               color: const Color(0xFF071015),
               child: SafeArea(
-                child: SizedBox.expand(
-                  child: IndexedStack(
-                    index: selected,
-                    children: pages
-                        .map((page) => SizedBox.expand(child: page))
-                        .toList(),
-                  ),
+                child: KeyedSubtree(
+                  key: ValueKey<int>(selected),
+                  child: pages[selected],
                 ),
               ),
             ),
@@ -121,59 +123,62 @@ class _Navigation extends StatelessWidget {
   const _Navigation(
       {required this.selected, required this.choose, required this.logout});
   @override
-  Widget build(BuildContext context) => Container(
-      width: double.infinity,
-      decoration: const BoxDecoration(
-          color: Color(0xFF0A1218),
-          border: Border(right: BorderSide(color: line))),
-      child: SafeArea(
-          child: Padding(
-              padding: const EdgeInsets.all(20),
-              child: Column(children: [
-                const Row(children: [
-                  FlutterLogo(size: 38),
-                  SizedBox(width: 12),
-                  Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('Nexo',
-                            style: TextStyle(
-                                fontSize: 20, fontWeight: FontWeight.w800)),
-                        Text('FINANÃ‡AS',
-                            style: TextStyle(
-                                fontSize: 9, letterSpacing: 1.8, color: muted))
-                      ])
-                ]),
-                const SizedBox(height: 38),
-                ...[
-                  (Icons.grid_view_rounded, 'Dashboard'),
-                  (Icons.receipt_long_outlined, 'Despesas'),
-                  (Icons.swap_horiz_rounded, 'TransaÃ§Ãµes'),
-                  (Icons.category_outlined, 'Categorias')
-                ].asMap().entries.map((entry) => Padding(
-                    padding: const EdgeInsets.only(bottom: 7),
-                    child: ListTile(
-                        onTap: () => choose(entry.key),
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12)),
-                        tileColor: selected == entry.key
-                            ? teal.withValues(alpha: .16)
-                            : null,
-                        leading: Icon(entry.value.$1,
-                            color: selected == entry.key
-                                ? const Color(0xFF5EEAD4)
-                                : muted),
-                        title: Text(entry.value.$2,
-                            style: TextStyle(
-                                fontWeight: selected == entry.key
-                                    ? FontWeight.w700
-                                    : FontWeight.w500))))),
-                const Spacer(),
-                TextButton.icon(
-                    onPressed: logout,
-                    icon: const Icon(Icons.logout),
-                    label: const Text('Sair da conta')),
-              ]))));
+  Widget build(BuildContext context) => Material(
+      color: const Color(0xFF0A1218),
+      child: Container(
+          width: double.infinity,
+          decoration: const BoxDecoration(
+              border: Border(right: BorderSide(color: line))),
+          child: SafeArea(
+              child: Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: Column(children: [
+                    const Row(children: [
+                      FlutterLogo(size: 38),
+                      SizedBox(width: 12),
+                      Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('Nexo',
+                                style: TextStyle(
+                                    fontSize: 20, fontWeight: FontWeight.w800)),
+                            Text('FINANÃ‡AS',
+                                style: TextStyle(
+                                    fontSize: 9,
+                                    letterSpacing: 1.8,
+                                    color: muted))
+                          ])
+                    ]),
+                    const SizedBox(height: 38),
+                    ...[
+                      (Icons.grid_view_rounded, 'Dashboard'),
+                      (Icons.receipt_long_outlined, 'Despesas'),
+                      (Icons.swap_horiz_rounded, 'TransaÃ§Ãµes'),
+                      (Icons.category_outlined, 'Categorias')
+                    ].asMap().entries.map((entry) => Padding(
+                        padding: const EdgeInsets.only(bottom: 7),
+                        child: ListTile(
+                            onTap: () => choose(entry.key),
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12)),
+                            tileColor: selected == entry.key
+                                ? teal.withValues(alpha: .16)
+                                : null,
+                            leading: Icon(entry.value.$1,
+                                color: selected == entry.key
+                                    ? const Color(0xFF5EEAD4)
+                                    : muted),
+                            title: Text(entry.value.$2,
+                                style: TextStyle(
+                                    fontWeight: selected == entry.key
+                                        ? FontWeight.w700
+                                        : FontWeight.w500))))),
+                    const Spacer(),
+                    TextButton.icon(
+                        onPressed: logout,
+                        icon: const Icon(Icons.logout),
+                        label: const Text('Sair da conta')),
+                  ])))));
 }
 
 class _DashboardHome extends StatelessWidget {
