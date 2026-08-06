@@ -20,6 +20,25 @@ class FinanceAppTest(unittest.TestCase):
         self.assertIn(b"dashboard-recent", response.data)
         self.assertIn(b"expenses-desktop.css", response.data)
 
+    def test_frontend_routes_and_theme_assets_load_without_server_errors(self):
+        for path in ("/dashboard", "/transactions", "/expenses", "/categories", "/login", "/register", "/health"):
+            with self.subTest(path=path):
+                response = self.client.get(path)
+                try:
+                    self.assertLess(response.status_code, 500)
+                finally:
+                    response.close()
+        theme = self.client.get("/static/theme-refresh.css")
+        icon = self.client.get("/static/icons/nexo.svg")
+        try:
+            self.assertEqual(theme.status_code, 200)
+            self.assertIn(b"#14b8a6", theme.data)
+            self.assertEqual(icon.status_code, 200)
+            self.assertIn(b"<svg", icon.data)
+        finally:
+            theme.close()
+            icon.close()
+
     def test_dashboard_highlights_overdue_expenses(self):
         self.client.post("/expenses", data={
             "description": "Conta vencida", "amount": "99,90", "due_on": "2020-01-01",
@@ -61,8 +80,11 @@ class FinanceAppTest(unittest.TestCase):
 
     def test_pwa_manifest_is_available(self):
         response = self.client.get("/static/manifest.webmanifest")
-        self.assertEqual(response.status_code, 200)
-        self.assertIn(b"Nexo", response.data)
+        try:
+            self.assertEqual(response.status_code, 200)
+            self.assertIn(b"Nexo", response.data)
+        finally:
+            response.close()
 
     def test_expense_payment_restore_and_delete(self):
         self.client.post("/expenses", data={
@@ -209,6 +231,31 @@ class NativeApiAuthenticationTest(unittest.TestCase):
         self.assertEqual(self.client.get("/api/v2/auth/me", headers={"Authorization": f"Bearer {token}"}).status_code, 401)
         login = self.client.post("/api/v2/auth/login", json={"identity": "usera", "password": "segura123"})
         self.assertEqual(login.status_code, 200)
+
+    def test_existing_web_account_can_use_native_api_and_shared_wallet(self):
+        login = self.client.post("/api/v2/auth/login", json={
+            "identity": "test", "password": "test-password",
+        })
+        self.assertEqual(login.status_code, 200)
+        headers = {"Authorization": f"Bearer {login.get_json()['token']}"}
+        created = self.client.post("/api/v2/transactions", headers=headers, json={
+            "description": "Carteira compartilhada", "amount_cents": 43210,
+            "type": "income", "occurred_on": date.today().isoformat(),
+        })
+        self.assertEqual(created.status_code, 201)
+        dashboard = self.client.get("/api/v2/dashboard", headers=headers).get_json()
+        self.assertEqual(dashboard["balance_cents"], 43210)
+        self.assertIn(b"Carteira compartilhada", self.client.get("/transactions?period=all").data)
+
+    def test_api_rejects_expense_transaction_without_wallet_balance(self):
+        registered = self.register("nosaldo")
+        headers = {"Authorization": f"Bearer {registered.get_json()['token']}"}
+        response = self.client.post("/api/v2/transactions", headers=headers, json={
+            "description": "SaÃ­da sem saldo", "amount_cents": 5000,
+            "type": "expense", "occurred_on": date.today().isoformat(),
+        })
+        self.assertEqual(response.status_code, 409)
+        self.assertIn("Saldo insuficiente", response.get_json()["error"])
 
     def test_each_user_receives_separate_categories(self):
         first, second = self.register("one"), self.register("two")
