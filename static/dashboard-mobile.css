@@ -1,0 +1,4 @@
+.dashboard-transaction-info{min-width:0}.dashboard-transaction-info strong{overflow-wrap:anywhere}.dashboard-transaction-value{white-space:nowrap;text-align:right;font-variant-numeric:tabular-nums}
+@media(max-width:600px){.dashboard-recent .transaction-row{grid-template-columns:34px minmax(0,1fr) auto;gap:10px}.dashboard-recent .category-dot{width:34px;height:34px;border-radius:9px}.dashboard-recent .dashboard-transaction-value{font-size:12px;line-height:1.25}}
+@media(max-width:360px){.dashboard-recent .transaction-row{grid-template-columns:34px minmax(0,1fr)}.dashboard-recent .dashboard-transaction-value{grid-column:2;justify-self:start;margin-top:-3px}}
+
