@@ -66,11 +66,12 @@ class FinanceAppTest(unittest.TestCase):
 
     def test_expense_payment_restore_and_delete(self):
         self.client.post("/expenses", data={
-            "description": "Notebook", "amount": "1440,00", "due_on": "2099-08-10",
+            "description": "Notebook", "amount": "120,00", "due_on": "2099-08-10",
             "installment_count": "12", "category_id": "", "notes": "",
         })
         page = self.client.get("/expenses")
         self.assertIn(b"12 x R$ 120,00", page.data)
+        self.assertIn(b"R$ 1.440,00 total", page.data)
         self.assertIn("Pendente".encode(), page.data)
         self.assertIn(b'data-label="Vencimento"', page.data)
         insufficient = self.client.post("/expenses/1/pay", follow_redirects=True)
@@ -80,11 +81,15 @@ class FinanceAppTest(unittest.TestCase):
             "occurred_on": date.today().isoformat(), "category_id": "", "notes": "",
         })
         self.client.post("/expenses/1/pay")
-        self.assertIn("Pago".encode(), self.client.get("/expenses").data)
+        paid_once = self.client.get("/expenses").data
+        self.assertIn(b"1 / 12", paid_once)
+        self.assertIn("Pendente".encode(), paid_once)
         summary = self.client.get(f"/api/summary?month={date.today():%Y-%m}").get_json()
-        self.assertEqual(summary["balance_cents"], 56000)
+        self.assertEqual(summary["balance_cents"], 188000)
         self.client.post("/expenses/1/restore")
-        self.assertIn("Pendente".encode(), self.client.get("/expenses").data)
+        restored = self.client.get("/expenses").data
+        self.assertIn(b"0 / 12", restored)
+        self.assertIn("Pendente".encode(), restored)
         summary = self.client.get(f"/api/summary?month={date.today():%Y-%m}").get_json()
         self.assertEqual(summary["balance_cents"], 200000)
         self.client.post("/expenses/1/delete")
