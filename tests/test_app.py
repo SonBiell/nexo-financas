@@ -127,6 +127,41 @@ class AuthenticationTest(unittest.TestCase):
         self.assertEqual(valid.location, "/")
 
 
+class NativeApiAuthenticationTest(unittest.TestCase):
+    def setUp(self):
+        self.db_file = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+        self.db_file.close()
+        self.app = create_app({"TESTING": True, "DATABASE": self.db_file.name, "SECRET_KEY": "native-test"})
+        self.client = self.app.test_client()
+
+    def register(self, suffix):
+        return self.client.post("/api/v2/auth/register", json={
+            "full_name": f"Usuário Teste {suffix}", "email": f"user{suffix}@example.com",
+            "username": f"user{suffix}", "password": "segura123",
+        })
+
+    def test_register_login_and_logout(self):
+        registered = self.register("a")
+        self.assertEqual(registered.status_code, 201)
+        token = registered.get_json()["token"]
+        me = self.client.get("/api/v2/auth/me", headers={"Authorization": f"Bearer {token}"})
+        self.assertEqual(me.get_json()["user"]["username"], "usera")
+        self.client.post("/api/v2/auth/logout", headers={"Authorization": f"Bearer {token}"})
+        self.assertEqual(self.client.get("/api/v2/auth/me", headers={"Authorization": f"Bearer {token}"}).status_code, 401)
+        login = self.client.post("/api/v2/auth/login", json={"identity": "usera", "password": "segura123"})
+        self.assertEqual(login.status_code, 200)
+
+    def test_each_user_receives_separate_categories(self):
+        first, second = self.register("one"), self.register("two")
+        self.assertEqual(first.status_code, 201)
+        self.assertEqual(second.status_code, 201)
+        connection = sqlite3.connect(self.db_file.name)
+        users = connection.execute("SELECT id FROM native_users ORDER BY id").fetchall()
+        counts = [connection.execute("SELECT COUNT(*) FROM native_categories WHERE user_id=?", (user[0],)).fetchone()[0] for user in users]
+        connection.close()
+        self.assertEqual(counts, [4, 4])
+
+
 if __name__ == "__main__":
     unittest.main()
 
