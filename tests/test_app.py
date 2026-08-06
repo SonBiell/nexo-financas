@@ -91,6 +91,26 @@ class FinanceAppTest(unittest.TestCase):
         summary = self.client.get(f"/api/summary?month={date.today():%Y-%m}").get_json()
         self.assertEqual(summary["balance_cents"], 200000)
 
+    def test_monthly_recurring_expense_creates_next_occurrence(self):
+        self.client.post("/expenses", data={
+            "description": "Internet", "amount": "120,00", "due_on": date.today().isoformat(),
+            "installment_count": "6", "category_id": "", "notes": "Mensal",
+            "recurring_monthly": "1",
+        })
+        self.client.get("/expenses")
+        connection = sqlite3.connect(self.db_file.name)
+        rows = connection.execute(
+            "SELECT id, amount_cents, installment_count, recurrence_key FROM expenses WHERE description='Internet' ORDER BY due_on"
+        ).fetchall()
+        connection.close()
+        self.assertEqual(len(rows), 2)
+        self.assertTrue(all(row[1] == 12000 and row[2] == 1 and row[3] for row in rows))
+        self.client.post(f"/expenses/{rows[0][0]}/delete")
+        connection = sqlite3.connect(self.db_file.name)
+        remaining = connection.execute("SELECT COUNT(*) FROM expenses WHERE description='Internet'").fetchone()[0]
+        connection.close()
+        self.assertEqual(remaining, 0)
+
 
 class AuthenticationTest(unittest.TestCase):
     def setUp(self):
