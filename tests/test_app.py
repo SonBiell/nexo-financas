@@ -17,6 +17,7 @@ class FinanceAppTest(unittest.TestCase):
         response = self.client.get("/")
         self.assertEqual(response.status_code, 200)
         self.assertIn("Visão geral".encode(), response.data)
+        self.assertIn(b"dashboard-recent", response.data)
 
     def test_dashboard_highlights_overdue_expenses(self):
         self.client.post("/expenses", data={
