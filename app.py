@@ -145,6 +145,66 @@ def create_app(test_config: dict | None = None) -> Flask:
                 elif damaged:
                     connection.execute("UPDATE categories SET name=? WHERE id=?", (correct_name, damaged["id"]))
 
+            native_migrated = connection.execute(
+                "SELECT value FROM app_metadata WHERE key='native_data_unified_v1'"
+            ).fetchone()
+            if not native_migrated:
+                native_user_map = {}
+                for native_user in connection.execute("SELECT * FROM native_users ORDER BY id").fetchall():
+                    unified = connection.execute(
+                        "SELECT id FROM users WHERE lower(email)=lower(?) OR lower(username)=lower(?)",
+                        (native_user["email"], native_user["username"]),
+                    ).fetchone()
+                    if unified:
+                        unified_id = unified["id"]
+                    else:
+                        cursor = connection.execute(
+                            """INSERT INTO users(full_name,document,birth_date,email,username,password_hash,created_at,last_login_at)
+                               VALUES(?,?,?,?,?,?,?,?)""",
+                            (native_user["full_name"], "", "", native_user["email"], native_user["username"],
+                             native_user["password_hash"], native_user["created_at"], native_user["last_login_at"]),
+                        )
+                        unified_id = cursor.lastrowid
+                    native_user_map[native_user["id"]] = unified_id
+
+                category_map = {}
+                for item in connection.execute("SELECT * FROM native_categories ORDER BY id").fetchall():
+                    unified_user_id = native_user_map.get(item["user_id"])
+                    if not unified_user_id:
+                        continue
+                    connection.execute(
+                        "INSERT OR IGNORE INTO categories(user_id,name,color,created_at) VALUES(?,?,?,?)",
+                        (unified_user_id, item["name"], item["color"], item["created_at"]),
+                    )
+                    category = connection.execute(
+                        "SELECT id FROM categories WHERE user_id=? AND name=?", (unified_user_id, item["name"])
+                    ).fetchone()
+                    category_map[item["id"]] = category["id"]
+
+                for item in connection.execute("SELECT * FROM native_transactions ORDER BY id").fetchall():
+                    unified_user_id = native_user_map.get(item["user_id"])
+                    if unified_user_id:
+                        connection.execute(
+                            """INSERT INTO transactions(user_id,category_id,description,amount_cents,type,occurred_on,
+                                                        notes,source,expense_id,created_at)
+                               VALUES(?,?,?,?,?,?,?,?,?,?)""",
+                            (unified_user_id, category_map.get(item["category_id"]), item["description"],
+                             item["amount_cents"], item["type"], item["occurred_on"], item["notes"],
+                             item["source"], item["expense_id"], item["created_at"]),
+                        )
+                for item in connection.execute("SELECT * FROM native_expenses ORDER BY id").fetchall():
+                    unified_user_id = native_user_map.get(item["user_id"])
+                    if unified_user_id:
+                        connection.execute(
+                            """INSERT INTO expenses(user_id,category_id,description,amount_cents,due_on,installment_count,
+                                                    installments_paid,notes,paid_at,created_at)
+                               VALUES(?,?,?,?,?,?,?,?,?,?)""",
+                            (unified_user_id, category_map.get(item["category_id"]), item["description"],
+                             item["amount_cents"], item["due_on"], item["installment_count"],
+                             item["installments_paid"], item["notes"], item["paid_at"], item["created_at"]),
+                        )
+                connection.execute("INSERT INTO app_metadata(key,value) VALUES('native_data_unified_v1','done')")
+
     init_db()
 
     if app.config.get("TESTING"):
@@ -240,7 +300,7 @@ def create_app(test_config: dict | None = None) -> Flask:
         token_hash = hashlib.sha256(token.encode()).hexdigest()
         expires_at = (datetime.now() + timedelta(days=30)).isoformat(timespec="seconds")
         connection.execute(
-            "INSERT INTO native_sessions(user_id,token_hash,expires_at) VALUES(?,?,?)",
+            "INSERT INTO api_sessions(user_id,token_hash,expires_at) VALUES(?,?,?)",
             (user_id, token_hash, expires_at),
         )
         return token
@@ -251,7 +311,7 @@ def create_app(test_config: dict | None = None) -> Flask:
             return None
         token_hash = hashlib.sha256(authorization[7:].strip().encode()).hexdigest()
         return connection.execute(
-            """SELECT u.* FROM native_users u JOIN native_sessions s ON s.user_id=u.id
+            """SELECT u.* FROM users u JOIN api_sessions s ON s.user_id=u.id
                WHERE s.token_hash=? AND s.expires_at>?""",
             (token_hash, datetime.now().isoformat(timespec="seconds")),
         ).fetchone()
@@ -270,12 +330,12 @@ def create_app(test_config: dict | None = None) -> Flask:
         try:
             with db() as connection:
                 cursor = connection.execute(
-                    "INSERT INTO native_users(full_name,email,username,password_hash) VALUES(?,?,?,?)",
-                    (full_name, email, username, generate_password_hash(password)),
+                    "INSERT INTO users(full_name,document,birth_date,email,username,password_hash) VALUES(?,?,?,?,?,?)",
+                    (full_name, "", "", email, username, generate_password_hash(password)),
                 )
                 user_id = cursor.lastrowid
                 connection.executemany(
-                    "INSERT INTO native_categories(user_id,name,color) VALUES(?,?,?)",
+                    "INSERT INTO categories(user_id,name,color) VALUES(?,?,?)",
                     [(user_id, "Moradia", "#8b5cf6"), (user_id, "AlimentaÃ§Ã£o", "#22c55e"), (user_id, "Transporte", "#38bdf8"), (user_id, "SalÃ¡rio", "#f59e0b")],
                 )
                 token = issue_native_token(connection, user_id)
@@ -290,11 +350,11 @@ def create_app(test_config: dict | None = None) -> Flask:
         password = str(payload.get("password", ""))
         with db() as connection:
             user = connection.execute(
-                "SELECT * FROM native_users WHERE email=? OR username=?", (identity.lower(), identity)
+                "SELECT * FROM users WHERE lower(email)=lower(?) OR lower(username)=lower(?)", (identity, identity)
             ).fetchone()
             if not user or not check_password_hash(user["password_hash"], password):
                 return jsonify({"error": "UsuÃ¡rio ou senha invÃ¡lidos."}), 401
-            connection.execute("UPDATE native_users SET last_login_at=? WHERE id=?", (datetime.now().isoformat(timespec="seconds"), user["id"]))
+            connection.execute("UPDATE users SET last_login_at=? WHERE id=?", (datetime.now().isoformat(timespec="seconds"), user["id"]))
             token = issue_native_token(connection, user["id"])
         return jsonify({"token": token, "user": {"id": user["id"], "full_name": user["full_name"], "email": user["email"], "username": user["username"]}})
 
@@ -312,7 +372,7 @@ def create_app(test_config: dict | None = None) -> Flask:
         if authorization.startswith("Bearer "):
             token_hash = hashlib.sha256(authorization[7:].strip().encode()).hexdigest()
             with db() as connection:
-                connection.execute("DELETE FROM native_sessions WHERE token_hash=?", (token_hash,))
+                connection.execute("DELETE FROM api_sessions WHERE token_hash=?", (token_hash,))
         return "", 204
 
     @app.get("/api/v2/dashboard")
@@ -331,24 +391,24 @@ def create_app(test_config: dict | None = None) -> Flask:
             totals = connection.execute(
                 """SELECT COALESCE(SUM(CASE WHEN type='income' THEN amount_cents END),0) income,
                           COALESCE(SUM(CASE WHEN type='expense' THEN amount_cents END),0) expense
-                   FROM native_transactions WHERE user_id=? AND substr(occurred_on,1,7)=?""",
+                   FROM transactions WHERE user_id=? AND substr(occurred_on,1,7)=?""",
                 (user["id"], month),
             ).fetchone()
             balance = connection.execute(
                 """SELECT COALESCE(SUM(CASE WHEN type='income' THEN amount_cents ELSE -amount_cents END),0)
-                   FROM native_transactions WHERE user_id=?""", (user["id"],)
+                   FROM transactions WHERE user_id=?""", (user["id"],)
             ).fetchone()[0]
             expense_counts = connection.execute(
                 """SELECT COUNT(CASE WHEN paid_at IS NULL THEN 1 END) pending,
                           COUNT(CASE WHEN paid_at IS NULL AND due_on < ? THEN 1 END) overdue,
                           COUNT(CASE WHEN paid_at IS NULL AND due_on BETWEEN ? AND ? THEN 1 END) due_soon
-                   FROM native_expenses WHERE user_id=?""",
+                   FROM expenses WHERE user_id=?""",
                 (today, today, due_limit, user["id"]),
             ).fetchone()
             recent = connection.execute(
                 """SELECT t.id,t.description,t.amount_cents,t.type,t.occurred_on,
                           COALESCE(c.name,'Sem categoria') category_name,COALESCE(c.color,'#64748b') color
-                   FROM native_transactions t LEFT JOIN native_categories c ON c.id=t.category_id
+                   FROM transactions t LEFT JOIN categories c ON c.id=t.category_id
                    WHERE t.user_id=? ORDER BY t.occurred_on DESC,t.id DESC LIMIT 6""",
                 (user["id"],),
             ).fetchall()
@@ -363,6 +423,262 @@ def create_app(test_config: dict | None = None) -> Flask:
             "due_soon_expenses": expense_counts["due_soon"],
             "recent_transactions": [dict(row) for row in recent],
         })
+
+    def api_user(connection: sqlite3.Connection):
+        user = native_user_from_request(connection)
+        if not user:
+            return None, (jsonify({"error": "SessÃƒÂ£o invÃƒÂ¡lida ou expirada."}), 401)
+        return user, None
+
+    def api_amount(payload: dict) -> int:
+        try:
+            value = int(payload.get("amount_cents", 0))
+        except (TypeError, ValueError):
+            return 0
+        return value if value > 0 else 0
+
+    @app.get("/api/v2/categories")
+    def api_categories_list():
+        with db() as connection:
+            user, failure = api_user(connection)
+            if failure:
+                return failure
+            rows = connection.execute(
+                """SELECT c.id,c.name,c.color,COUNT(e.id) expense_count
+                   FROM categories c LEFT JOIN expenses e ON e.category_id=c.id AND e.user_id=c.user_id
+                   WHERE c.user_id=? GROUP BY c.id ORDER BY c.name COLLATE NOCASE""", (user["id"],)
+            ).fetchall()
+        return jsonify({"categories": [dict(row) for row in rows]})
+
+    @app.post("/api/v2/categories")
+    def api_categories_create():
+        payload = request.get_json(silent=True) or {}
+        name = " ".join(str(payload.get("name", "")).split())
+        color = str(payload.get("color", "#14b8a6"))
+        if len(name) < 2 or not re.fullmatch(r"#[0-9A-Fa-f]{6}", color):
+            return jsonify({"error": "Informe um nome e uma cor vÃƒÂ¡lidos."}), 400
+        try:
+            with db() as connection:
+                user, failure = api_user(connection)
+                if failure:
+                    return failure
+                cursor = connection.execute(
+                    "INSERT INTO categories(user_id,name,color) VALUES(?,?,?)", (user["id"], name, color)
+                )
+                category_id = cursor.lastrowid
+            return jsonify({"id": category_id, "name": name, "color": color}), 201
+        except sqlite3.IntegrityError:
+            return jsonify({"error": "Esta categoria jÃƒÂ¡ existe."}), 409
+
+    @app.put("/api/v2/categories/<int:category_id>")
+    def api_categories_update(category_id: int):
+        payload = request.get_json(silent=True) or {}
+        name = " ".join(str(payload.get("name", "")).split())
+        color = str(payload.get("color", "#14b8a6"))
+        if len(name) < 2 or not re.fullmatch(r"#[0-9A-Fa-f]{6}", color):
+            return jsonify({"error": "Informe um nome e uma cor vÃƒÂ¡lidos."}), 400
+        try:
+            with db() as connection:
+                user, failure = api_user(connection)
+                if failure:
+                    return failure
+                result = connection.execute(
+                    "UPDATE categories SET name=?,color=? WHERE id=? AND user_id=?",
+                    (name, color, category_id, user["id"]),
+                )
+                if not result.rowcount:
+                    return jsonify({"error": "Categoria nÃƒÂ£o encontrada."}), 404
+            return jsonify({"id": category_id, "name": name, "color": color})
+        except sqlite3.IntegrityError:
+            return jsonify({"error": "Esta categoria jÃƒÂ¡ existe."}), 409
+
+    @app.delete("/api/v2/categories/<int:category_id>")
+    def api_categories_delete(category_id: int):
+        with db() as connection:
+            user, failure = api_user(connection)
+            if failure:
+                return failure
+            result = connection.execute("DELETE FROM categories WHERE id=? AND user_id=?", (category_id, user["id"]))
+            if not result.rowcount:
+                return jsonify({"error": "Categoria nÃƒÂ£o encontrada."}), 404
+        return "", 204
+
+    @app.get("/api/v2/transactions")
+    def api_transactions_list():
+        month = request.args.get("month", "")
+        with db() as connection:
+            user, failure = api_user(connection)
+            if failure:
+                return failure
+            parameters = [user["id"]]
+            month_filter = ""
+            if month:
+                month_filter = " AND substr(t.occurred_on,1,7)=?"
+                parameters.append(month)
+            rows = connection.execute(
+                f"""SELECT t.id,t.description,t.amount_cents,t.type,t.occurred_on,t.notes,t.source,
+                           t.category_id,COALESCE(c.name,'Sem categoria') category_name,COALESCE(c.color,'#64748b') color
+                    FROM transactions t LEFT JOIN categories c ON c.id=t.category_id
+                    WHERE t.user_id=?{month_filter} ORDER BY t.occurred_on DESC,t.id DESC""", parameters
+            ).fetchall()
+        return jsonify({"transactions": [dict(row) for row in rows]})
+
+    @app.post("/api/v2/transactions")
+    def api_transactions_create():
+        payload = request.get_json(silent=True) or {}
+        description = " ".join(str(payload.get("description", "")).split())
+        amount = api_amount(payload)
+        transaction_type = str(payload.get("type", ""))
+        occurred_on = str(payload.get("occurred_on", date.today().isoformat()))
+        if len(description) < 2 or not amount or transaction_type not in {"income", "expense"}:
+            return jsonify({"error": "Preencha descriÃƒÂ§ÃƒÂ£o, valor e tipo."}), 400
+        try:
+            datetime.strptime(occurred_on, "%Y-%m-%d")
+        except ValueError:
+            return jsonify({"error": "Data invÃƒÂ¡lida."}), 400
+        with db() as connection:
+            user, failure = api_user(connection)
+            if failure:
+                return failure
+            if transaction_type == "expense":
+                balance = connection.execute(
+                    "SELECT COALESCE(SUM(CASE WHEN type='income' THEN amount_cents ELSE -amount_cents END),0) FROM transactions WHERE user_id=?",
+                    (user["id"],),
+                ).fetchone()[0]
+                if balance < amount:
+                    return jsonify({"error": "Saldo insuficiente para esta saÃƒÂ­da."}), 409
+            cursor = connection.execute(
+                """INSERT INTO transactions(user_id,category_id,description,amount_cents,type,occurred_on,notes,source)
+                   VALUES(?,?,?,?,?,?,?,'manual')""",
+                (user["id"], payload.get("category_id"), description, amount, transaction_type,
+                 occurred_on, str(payload.get("notes", ""))),
+            )
+        return jsonify({"id": cursor.lastrowid}), 201
+
+    @app.delete("/api/v2/transactions/<int:transaction_id>")
+    def api_transactions_delete(transaction_id: int):
+        with db() as connection:
+            user, failure = api_user(connection)
+            if failure:
+                return failure
+            item = connection.execute(
+                "SELECT source FROM transactions WHERE id=? AND user_id=?", (transaction_id, user["id"])
+            ).fetchone()
+            if not item:
+                return jsonify({"error": "TransaÃƒÂ§ÃƒÂ£o nÃƒÂ£o encontrada."}), 404
+            if item["source"] != "manual":
+                return jsonify({"error": "MovimentaÃƒÂ§ÃƒÂµes automÃƒÂ¡ticas devem ser alteradas pela despesa."}), 409
+            connection.execute("DELETE FROM transactions WHERE id=? AND user_id=?", (transaction_id, user["id"]))
+        return "", 204
+
+    @app.get("/api/v2/expenses")
+    def api_expenses_list():
+        with db() as connection:
+            user, failure = api_user(connection)
+            if failure:
+                return failure
+            ensure_recurring_expenses(user["id"])
+            rows = connection.execute(
+                """SELECT e.*,COALESCE(c.name,'Sem categoria') category_name,COALESCE(c.color,'#64748b') color
+                   FROM expenses e LEFT JOIN categories c ON c.id=e.category_id
+                   WHERE e.user_id=? ORDER BY CASE WHEN e.paid_at IS NULL THEN 0 ELSE 1 END,e.due_on,e.id""",
+                (user["id"],),
+            ).fetchall()
+        return jsonify({"expenses": [dict(row) for row in rows]})
+
+    @app.post("/api/v2/expenses")
+    def api_expenses_create():
+        payload = request.get_json(silent=True) or {}
+        description = " ".join(str(payload.get("description", "")).split())
+        amount = api_amount(payload)
+        due_on = str(payload.get("due_on", ""))
+        installments = max(1, min(360, int(payload.get("installment_count", 1) or 1)))
+        try:
+            due_date = datetime.strptime(due_on, "%Y-%m-%d").date()
+        except ValueError:
+            return jsonify({"error": "Vencimento invÃƒÂ¡lido."}), 400
+        if len(description) < 2 or not amount:
+            return jsonify({"error": "Informe descriÃƒÂ§ÃƒÂ£o e valor da parcela."}), 400
+        recurring = bool(payload.get("recurring_monthly", False))
+        recurrence_key = secrets.token_hex(12) if recurring else None
+        with db() as connection:
+            user, failure = api_user(connection)
+            if failure:
+                return failure
+            cursor = connection.execute(
+                """INSERT INTO expenses(user_id,category_id,description,amount_cents,due_on,installment_count,notes,
+                                        recurring_monthly,recurrence_key,recurrence_day)
+                   VALUES(?,?,?,?,?,?,?,?,?,?)""",
+                (user["id"], payload.get("category_id"), description, amount, due_on, installments,
+                 str(payload.get("notes", "")), int(recurring), recurrence_key, due_date.day if recurring else None),
+            )
+        return jsonify({"id": cursor.lastrowid}), 201
+
+    @app.post("/api/v2/expenses/<int:expense_id>/pay")
+    def api_expenses_pay(expense_id: int):
+        with db() as connection:
+            user, failure = api_user(connection)
+            if failure:
+                return failure
+            expense = connection.execute("SELECT * FROM expenses WHERE id=? AND user_id=?", (expense_id, user["id"])).fetchone()
+            if not expense or expense["paid_at"]:
+                return jsonify({"error": "Despesa indisponÃƒÂ­vel para pagamento."}), 409
+            balance = connection.execute(
+                "SELECT COALESCE(SUM(CASE WHEN type='income' THEN amount_cents ELSE -amount_cents END),0) FROM transactions WHERE user_id=?",
+                (user["id"],),
+            ).fetchone()[0]
+            if balance < expense["amount_cents"]:
+                return jsonify({"error": "Saldo insuficiente para pagar esta parcela."}), 409
+            paid = expense["installments_paid"] + 1
+            completed = paid >= expense["installment_count"]
+            connection.execute(
+                "UPDATE expenses SET installments_paid=?,paid_at=? WHERE id=? AND user_id=?",
+                (paid, datetime.now().isoformat(timespec="seconds") if completed else None, expense_id, user["id"]),
+            )
+            connection.execute(
+                """INSERT INTO transactions(user_id,category_id,description,amount_cents,type,occurred_on,notes,source,expense_id)
+                   VALUES(?,?,?,?, 'expense', ?,?,'expense_payment',?)""",
+                (user["id"], expense["category_id"], f"Pagamento: {expense['description']}", expense["amount_cents"],
+                 date.today().isoformat(), f"Parcela {paid}/{expense['installment_count']}", expense_id),
+            )
+        return jsonify({"paid_installments": paid, "completed": completed})
+
+    @app.post("/api/v2/expenses/<int:expense_id>/restore")
+    def api_expenses_restore(expense_id: int):
+        with db() as connection:
+            user, failure = api_user(connection)
+            if failure:
+                return failure
+            expense = connection.execute("SELECT * FROM expenses WHERE id=? AND user_id=?", (expense_id, user["id"])).fetchone()
+            if not expense or expense["installments_paid"] < 1:
+                return jsonify({"error": "Esta despesa ainda nÃƒÂ£o possui parcela paga."}), 409
+            restored = expense["installments_paid"]
+            connection.execute(
+                "UPDATE expenses SET installments_paid=?,paid_at=NULL WHERE id=? AND user_id=?",
+                (restored - 1, expense_id, user["id"]),
+            )
+            connection.execute(
+                """INSERT INTO transactions(user_id,category_id,description,amount_cents,type,occurred_on,notes,source,expense_id)
+                   VALUES(?,?,?,?, 'income', ?,?,'expense_restore',?)""",
+                (user["id"], expense["category_id"], f"Estorno: {expense['description']}", expense["amount_cents"],
+                 date.today().isoformat(), f"RestauraÃƒÂ§ÃƒÂ£o da parcela {restored}", expense_id),
+            )
+        return jsonify({"paid_installments": restored - 1})
+
+    @app.delete("/api/v2/expenses/<int:expense_id>")
+    def api_expenses_delete(expense_id: int):
+        with db() as connection:
+            user, failure = api_user(connection)
+            if failure:
+                return failure
+            expense = connection.execute("SELECT recurrence_key FROM expenses WHERE id=? AND user_id=?", (expense_id, user["id"])).fetchone()
+            if not expense:
+                return jsonify({"error": "Despesa nÃƒÂ£o encontrada."}), 404
+            if expense["recurrence_key"]:
+                connection.execute("DELETE FROM expenses WHERE recurrence_key=? AND user_id=?", (expense["recurrence_key"], user["id"]))
+            else:
+                connection.execute("DELETE FROM expenses WHERE id=? AND user_id=?", (expense_id, user["id"]))
+        return "", 204
 
     @app.context_processor
     def inject_security():
