@@ -82,37 +82,34 @@ class _DashboardScreenState extends State<DashboardScreen> {
       CategoriesScreen(onChanged: load),
     ];
     return Scaffold(
-      body: LayoutBuilder(builder: (context, constraints) {
-        const sidebarWidth = 240.0;
-        return Stack(children: [
-          Positioned.fill(
-            left: sidebarWidth,
-            child: ColoredBox(
-              color: const Color(0xFF071015),
-              child: SafeArea(
-                child: ClipRect(
-                  child: IndexedStack(
-                    sizing: StackFit.expand,
-                    index: selected,
-                    children: pages,
-                  ),
-                ),
-              ),
-            ),
-          ),
-          Positioned(
-            left: 0,
-            top: 0,
-            bottom: 0,
-            width: sidebarWidth,
+      body: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          SizedBox(
+            width: 240,
             child: _Navigation(
               selected: selected,
               choose: (value) => setState(() => selected = value),
               logout: logout,
             ),
           ),
-        ]);
-      }),
+          Expanded(
+            child: ColoredBox(
+              color: const Color(0xFF071015),
+              child: SafeArea(
+                child: SizedBox.expand(
+                  child: IndexedStack(
+                    index: selected,
+                    children: pages
+                        .map((page) => SizedBox.expand(child: page))
+                        .toList(),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
