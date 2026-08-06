@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 import re
 import secrets
@@ -57,6 +58,7 @@ def create_app(test_config: dict | None = None) -> Flask:
     def init_db() -> None:
         with db() as connection:
             connection.executescript((BASE_DIR / "schema.sql").read_text(encoding="utf-8"))
+            connection.executescript((BASE_DIR / "native_schema.sql").read_text(encoding="utf-8"))
             existing = {row["name"] for row in connection.execute("PRAGMA table_info(transactions)")}
             migrations = {
                 "due_on": "ALTER TABLE transactions ADD COLUMN due_on TEXT",
@@ -111,6 +113,8 @@ def create_app(test_config: dict | None = None) -> Flask:
 
     @app.before_request
     def protect_application():
+        if request.path.startswith("/api/v2/"):
+            return None
         if app.config.get("TESTING"):
             return None
         endpoint = request.endpoint or ""
@@ -148,6 +152,86 @@ def create_app(test_config: dict | None = None) -> Flask:
             return jsonify({"status": "ok"})
         except sqlite3.Error:
             return jsonify({"status": "unavailable"}), 503
+
+    def issue_native_token(connection: sqlite3.Connection, user_id: int) -> str:
+        token = secrets.token_urlsafe(48)
+        token_hash = hashlib.sha256(token.encode()).hexdigest()
+        expires_at = (datetime.now() + timedelta(days=30)).isoformat(timespec="seconds")
+        connection.execute(
+            "INSERT INTO native_sessions(user_id,token_hash,expires_at) VALUES(?,?,?)",
+            (user_id, token_hash, expires_at),
+        )
+        return token
+
+    def native_user_from_request(connection: sqlite3.Connection):
+        authorization = request.headers.get("Authorization", "")
+        if not authorization.startswith("Bearer "):
+            return None
+        token_hash = hashlib.sha256(authorization[7:].strip().encode()).hexdigest()
+        return connection.execute(
+            """SELECT u.* FROM native_users u JOIN native_sessions s ON s.user_id=u.id
+               WHERE s.token_hash=? AND s.expires_at>?""",
+            (token_hash, datetime.now().isoformat(timespec="seconds")),
+        ).fetchone()
+
+    @app.post("/api/v2/auth/register")
+    def native_register():
+        payload = request.get_json(silent=True) or {}
+        full_name = " ".join(str(payload.get("full_name", "")).split())
+        email = str(payload.get("email", "")).strip().lower()
+        username = str(payload.get("username", "")).strip()
+        password = str(payload.get("password", ""))
+        if len(full_name) < 5 or not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
+            return jsonify({"error": "Informe nome completo e e-mail válido."}), 400
+        if len(username) < 3 or len(password) < 8:
+            return jsonify({"error": "Usuário deve ter 3 caracteres e a senha pelo menos 8."}), 400
+        try:
+            with db() as connection:
+                cursor = connection.execute(
+                    "INSERT INTO native_users(full_name,email,username,password_hash) VALUES(?,?,?,?)",
+                    (full_name, email, username, generate_password_hash(password)),
+                )
+                user_id = cursor.lastrowid
+                connection.executemany(
+                    "INSERT INTO native_categories(user_id,name,color) VALUES(?,?,?)",
+                    [(user_id, "Moradia", "#8b5cf6"), (user_id, "Alimentação", "#22c55e"), (user_id, "Transporte", "#38bdf8"), (user_id, "Salário", "#f59e0b")],
+                )
+                token = issue_native_token(connection, user_id)
+            return jsonify({"token": token, "user": {"id": user_id, "full_name": full_name, "email": email, "username": username}}), 201
+        except sqlite3.IntegrityError:
+            return jsonify({"error": "E-mail ou usuário já cadastrado."}), 409
+
+    @app.post("/api/v2/auth/login")
+    def native_login():
+        payload = request.get_json(silent=True) or {}
+        identity = str(payload.get("identity", "")).strip()
+        password = str(payload.get("password", ""))
+        with db() as connection:
+            user = connection.execute(
+                "SELECT * FROM native_users WHERE email=? OR username=?", (identity.lower(), identity)
+            ).fetchone()
+            if not user or not check_password_hash(user["password_hash"], password):
+                return jsonify({"error": "Usuário ou senha inválidos."}), 401
+            connection.execute("UPDATE native_users SET last_login_at=? WHERE id=?", (datetime.now().isoformat(timespec="seconds"), user["id"]))
+            token = issue_native_token(connection, user["id"])
+        return jsonify({"token": token, "user": {"id": user["id"], "full_name": user["full_name"], "email": user["email"], "username": user["username"]}})
+
+    @app.get("/api/v2/auth/me")
+    def native_me():
+        with db() as connection:
+            user = native_user_from_request(connection)
+        if not user:
+            return jsonify({"error": "Sessão inválida ou expirada."}), 401
+        return jsonify({"user": {"id": user["id"], "full_name": user["full_name"], "email": user["email"], "username": user["username"]}})
+
+    @app.post("/api/v2/auth/logout")
+    def native_logout():
+        authorization = request.headers.get("Authorization", "")
+        if authorization.startswith("Bearer "):
+            token_hash = hashlib.sha256(authorization[7:].strip().encode()).hexdigest()
+            with db() as connection:
+                connection.execute("DELETE FROM native_sessions WHERE token_hash=?", (token_hash,))
+        return "", 204
 
     @app.context_processor
     def inject_security():
