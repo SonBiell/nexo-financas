@@ -71,6 +71,7 @@ class FinanceAppTest(unittest.TestCase):
         page = self.client.get("/expenses")
         self.assertIn(b"12 x R$ 120,00", page.data)
         self.assertIn("Pendente".encode(), page.data)
+        self.assertIn(b'data-label="Vencimento"', page.data)
         insufficient = self.client.post("/expenses/1/pay", follow_redirects=True)
         self.assertIn("Saldo insuficiente".encode(), insufficient.data)
         self.client.post("/transactions", data={
