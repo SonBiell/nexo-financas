@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import hashlib
+import calendar
 import os
 import re
 import secrets
@@ -81,6 +82,16 @@ def create_app(test_config: dict | None = None) -> Flask:
             for column, statement in user_migrations.items():
                 if column not in user_columns:
                     connection.execute(statement)
+            expense_columns = {row["name"] for row in connection.execute("PRAGMA table_info(expenses)")}
+            expense_migrations = {
+                "recurring_monthly": "ALTER TABLE expenses ADD COLUMN recurring_monthly INTEGER NOT NULL DEFAULT 0",
+                "recurrence_key": "ALTER TABLE expenses ADD COLUMN recurrence_key TEXT",
+                "recurrence_day": "ALTER TABLE expenses ADD COLUMN recurrence_day INTEGER",
+            }
+            for column, statement in expense_migrations.items():
+                if column not in expense_columns:
+                    connection.execute(statement)
+            connection.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_expenses_recurrence_due ON expenses(recurrence_key, due_on) WHERE recurrence_key IS NOT NULL")
             migrated = connection.execute("SELECT value FROM app_metadata WHERE key='expenses_split_v1'").fetchone()
             if not migrated:
                 connection.execute(
@@ -105,6 +116,33 @@ def create_app(test_config: dict | None = None) -> Flask:
                     connection.execute("UPDATE categories SET name=? WHERE id=?", (correct_name, damaged["id"]))
 
     init_db()
+
+    def following_month(due_on: str, preferred_day: int) -> str:
+        current = datetime.strptime(due_on, "%Y-%m-%d").date()
+        year, month = (current.year + 1, 1) if current.month == 12 else (current.year, current.month + 1)
+        day = min(preferred_day, calendar.monthrange(year, month)[1])
+        return date(year, month, day).isoformat()
+
+    def ensure_recurring_expenses() -> None:
+        with db() as connection:
+            series = connection.execute(
+                """SELECT e.* FROM expenses e JOIN (
+                     SELECT recurrence_key, MAX(due_on) latest_due FROM expenses
+                     WHERE recurring_monthly=1 AND recurrence_key IS NOT NULL GROUP BY recurrence_key
+                   ) latest ON latest.recurrence_key=e.recurrence_key AND latest.latest_due=e.due_on"""
+            ).fetchall()
+            for item in series:
+                latest_due = item["due_on"]
+                preferred_day = item["recurrence_day"] or int(latest_due[-2:])
+                while latest_due <= date.today().isoformat():
+                    latest_due = following_month(latest_due, preferred_day)
+                    connection.execute(
+                        """INSERT OR IGNORE INTO expenses(
+                             description,amount_cents,category_id,due_on,installment_count,notes,
+                             recurring_monthly,recurrence_key,recurrence_day
+                           ) VALUES(?,?,?,?,1,?,1,?,?)""",
+                        (item["description"], item["amount_cents"], item["category_id"], latest_due, item["notes"], item["recurrence_key"], preferred_day),
+                    )
 
     def csrf_token() -> str:
         if "csrf_token" not in session:
@@ -313,6 +351,7 @@ def create_app(test_config: dict | None = None) -> Flask:
 
     @app.get("/")
     def dashboard():
+        ensure_recurring_expenses()
         month = request.args.get("month", date.today().strftime("%Y-%m"))
         try:
             datetime.strptime(month, "%Y-%m")
@@ -415,15 +454,25 @@ def create_app(test_config: dict | None = None) -> Flask:
                 installments = int(request.form.get("installment_count", 1))
                 description = request.form["description"].strip()
                 due_on = datetime.strptime(request.form["due_on"], "%Y-%m-%d").date().isoformat()
+                recurring_monthly = request.form.get("recurring_monthly") == "1"
+                if recurring_monthly:
+                    installments = 1
                 if not description or amount <= 0 or not 1 <= installments <= 360:
                     raise ValueError("Confira a descrição, o valor e as parcelas.")
                 with db() as connection:
-                    connection.execute("""INSERT INTO expenses(description,amount_cents,category_id,due_on,installment_count,notes)
-                                          VALUES(?,?,?,?,?,?)""", (description, int(amount * 100), request.form.get("category_id") or None, due_on, installments, request.form.get("notes", "").strip()))
+                    connection.execute("""INSERT INTO expenses(
+                                          description,amount_cents,category_id,due_on,installment_count,notes,
+                                          recurring_monthly,recurrence_key,recurrence_day)
+                                          VALUES(?,?,?,?,?,?,?,?,?)""", (
+                                          description, int(amount * 100), request.form.get("category_id") or None,
+                                          due_on, installments, request.form.get("notes", "").strip(),
+                                          int(recurring_monthly), secrets.token_urlsafe(16) if recurring_monthly else None,
+                                          int(due_on[-2:]) if recurring_monthly else None))
                 flash("Despesa cadastrada sem alterar o saldo.", "success")
                 return redirect(url_for("expenses"))
             except (ValueError, InvalidOperation, KeyError) as exc:
                 flash(str(exc) or "Confira os dados.", "error")
+        ensure_recurring_expenses()
         status_filter = request.args.get("status", "all")
         with db() as connection:
             rows = connection.execute(
@@ -476,8 +525,13 @@ def create_app(test_config: dict | None = None) -> Flask:
     @app.post("/expenses/<int:transaction_id>/delete")
     def delete_expense(transaction_id: int):
         with db() as connection:
-            connection.execute("DELETE FROM expenses WHERE id=?", (transaction_id,))
-        flash("Despesa excluída.", "success")
+            expense = connection.execute("SELECT recurrence_key FROM expenses WHERE id=?", (transaction_id,)).fetchone()
+            if expense and expense["recurrence_key"]:
+                connection.execute("DELETE FROM expenses WHERE recurrence_key=?", (expense["recurrence_key"],))
+                flash("Despesa e repetição mensal excluídas.", "success")
+            else:
+                connection.execute("DELETE FROM expenses WHERE id=?", (transaction_id,))
+                flash("Despesa excluída.", "success")
         return redirect(url_for("expenses"))
 
     @app.post("/transactions/<int:transaction_id>/delete")
