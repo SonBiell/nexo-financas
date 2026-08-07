@@ -34,7 +34,7 @@ def create_app(test_config: dict | None = None) -> Flask:
     production = os.environ.get("FINANCE_ENV") == "production"
     secret_key = os.environ.get("FINANCE_SECRET")
     if production and not secret_key:
-        raise RuntimeError("FINANCE_SECRET Ã© obrigatÃ³ria em produÃ§Ã£o")
+        raise RuntimeError("FINANCE_SECRET é obrigatória em produção")
     app.config.from_mapping(
         SECRET_KEY=secret_key or "local-development-key",
         DATABASE=os.environ.get("DATABASE_PATH", str(BASE_DIR / "instance" / "financas.db")),
@@ -99,7 +99,7 @@ def create_app(test_config: dict | None = None) -> Flask:
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
                     name TEXT NOT NULL COLLATE NOCASE,
-                    color TEXT NOT NULL DEFAULT '#8b5cf6',
+                    color TEXT NOT NULL DEFAULT '#14b8a6',
                     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                     UNIQUE(user_id, name))""")
                 connection.execute("""INSERT INTO categories_v2(id,user_id,name,color,created_at)
@@ -133,9 +133,9 @@ def create_app(test_config: dict | None = None) -> Flask:
             for user in connection.execute("SELECT id FROM users").fetchall():
                 connection.executemany(
                     "INSERT OR IGNORE INTO categories (user_id, name, color) VALUES (?, ?, ?)",
-                    [(user["id"], "Moradia", "#8b5cf6"), (user["id"], "AlimentaÃ§Ã£o", "#22c55e"), (user["id"], "Transporte", "#38bdf8"), (user["id"], "SalÃ¡rio", "#f59e0b")],
+                    [(user["id"], "Moradia", "#14b8a6"), (user["id"], "Alimentação", "#22c55e"), (user["id"], "Transporte", "#38bdf8"), (user["id"], "Salário", "#f59e0b")],
                 )
-            for damaged_name, correct_name in (("AlimentaÃƒÂ§ÃƒÂ£o", "AlimentaÃ§Ã£o"), ("SalÃƒÂ¡rio", "SalÃ¡rio")):
+            for damaged_name, correct_name in (("AlimentaÃ§Ã£o", "Alimentação"), ("SalÃ¡rio", "Salário")):
                 damaged = connection.execute("SELECT id,user_id FROM categories WHERE name=?", (damaged_name,)).fetchone()
                 correct = connection.execute("SELECT id FROM categories WHERE name=? AND user_id=?", (correct_name, damaged["user_id"] if damaged else -1)).fetchone()
                 if damaged and correct:
@@ -211,12 +211,12 @@ def create_app(test_config: dict | None = None) -> Flask:
         with db() as connection:
             if not connection.execute("SELECT 1 FROM users LIMIT 1").fetchone():
                 connection.execute("""INSERT INTO users(full_name,document,birth_date,email,username,password_hash)
-                                      VALUES('UsuÃ¡rio de Teste','00000000000','1990-01-01','test@nexo.local','test',?)""",
+                                      VALUES('Usuário de Teste','00000000000','1990-01-01','test@nexo.local','test',?)""",
                                    (generate_password_hash("test-password"),))
                 test_user_id = connection.execute("SELECT id FROM users WHERE username='test'").fetchone()["id"]
                 connection.executemany("INSERT INTO categories(user_id,name,color) VALUES(?,?,?)", [
-                    (test_user_id, "Moradia", "#8b5cf6"), (test_user_id, "AlimentaÃ§Ã£o", "#22c55e"),
-                    (test_user_id, "Transporte", "#38bdf8"), (test_user_id, "SalÃ¡rio", "#f59e0b")])
+                    (test_user_id, "Moradia", "#14b8a6"), (test_user_id, "Alimentação", "#22c55e"),
+                    (test_user_id, "Transporte", "#38bdf8"), (test_user_id, "Salário", "#f59e0b")])
 
     def active_user_id() -> int:
         if "user_id" in session:
@@ -270,7 +270,7 @@ def create_app(test_config: dict | None = None) -> Flask:
         if request.method == "POST":
             received = request.form.get("csrf_token") or request.headers.get("X-CSRF-Token")
             if not received or not secrets.compare_digest(received, session.get("csrf_token", "")):
-                abort(400, "FormulÃ¡rio expirado. Atualize a pÃ¡gina e tente novamente.")
+                abort(400, "Formulário expirado. Atualize a página e tente novamente.")
         if endpoint not in public_endpoints and "user_id" not in session:
             return redirect(url_for("login", next=request.path))
         return None
@@ -324,9 +324,9 @@ def create_app(test_config: dict | None = None) -> Flask:
         username = str(payload.get("username", "")).strip()
         password = str(payload.get("password", ""))
         if len(full_name) < 5 or not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
-            return jsonify({"error": "Informe nome completo e e-mail vÃ¡lido."}), 400
+            return jsonify({"error": "Informe nome completo e e-mail válido."}), 400
         if len(username) < 3 or len(password) < 8:
-            return jsonify({"error": "UsuÃ¡rio deve ter 3 caracteres e a senha pelo menos 8."}), 400
+            return jsonify({"error": "Usuário deve ter 3 caracteres e a senha pelo menos 8."}), 400
         try:
             with db() as connection:
                 cursor = connection.execute(
@@ -336,12 +336,12 @@ def create_app(test_config: dict | None = None) -> Flask:
                 user_id = cursor.lastrowid
                 connection.executemany(
                     "INSERT INTO categories(user_id,name,color) VALUES(?,?,?)",
-                    [(user_id, "Moradia", "#8b5cf6"), (user_id, "AlimentaÃ§Ã£o", "#22c55e"), (user_id, "Transporte", "#38bdf8"), (user_id, "SalÃ¡rio", "#f59e0b")],
+                    [(user_id, "Moradia", "#14b8a6"), (user_id, "Alimentação", "#22c55e"), (user_id, "Transporte", "#38bdf8"), (user_id, "Salário", "#f59e0b")],
                 )
                 token = issue_native_token(connection, user_id)
             return jsonify({"token": token, "user": {"id": user_id, "full_name": full_name, "email": email, "username": username}}), 201
         except sqlite3.IntegrityError:
-            return jsonify({"error": "E-mail ou usuÃ¡rio jÃ¡ cadastrado."}), 409
+            return jsonify({"error": "E-mail ou usuário já cadastrado."}), 409
 
     @app.post("/api/v2/auth/login")
     def native_login():
@@ -353,7 +353,7 @@ def create_app(test_config: dict | None = None) -> Flask:
                 "SELECT * FROM users WHERE lower(email)=lower(?) OR lower(username)=lower(?)", (identity, identity)
             ).fetchone()
             if not user or not check_password_hash(user["password_hash"], password):
-                return jsonify({"error": "UsuÃ¡rio ou senha invÃ¡lidos."}), 401
+                return jsonify({"error": "Usuário ou senha inválidos."}), 401
             connection.execute("UPDATE users SET last_login_at=? WHERE id=?", (datetime.now().isoformat(timespec="seconds"), user["id"]))
             token = issue_native_token(connection, user["id"])
         return jsonify({"token": token, "user": {"id": user["id"], "full_name": user["full_name"], "email": user["email"], "username": user["username"]}})
@@ -363,7 +363,7 @@ def create_app(test_config: dict | None = None) -> Flask:
         with db() as connection:
             user = native_user_from_request(connection)
         if not user:
-            return jsonify({"error": "SessÃ£o invÃ¡lida ou expirada."}), 401
+            return jsonify({"error": "Sessão inválida ou expirada."}), 401
         return jsonify({"user": {"id": user["id"], "full_name": user["full_name"], "email": user["email"], "username": user["username"]}})
 
     @app.post("/api/v2/auth/logout")
@@ -381,13 +381,13 @@ def create_app(test_config: dict | None = None) -> Flask:
         try:
             datetime.strptime(month, "%Y-%m")
         except ValueError:
-            return jsonify({"error": "MÃªs invÃ¡lido."}), 400
+            return jsonify({"error": "Mês inválido."}), 400
         today = date.today().isoformat()
         due_limit = (date.today() + timedelta(days=7)).isoformat()
         with db() as connection:
             user = native_user_from_request(connection)
             if not user:
-                return jsonify({"error": "SessÃ£o invÃ¡lida ou expirada."}), 401
+                return jsonify({"error": "Sessão inválida ou expirada."}), 401
             totals = connection.execute(
                 """SELECT COALESCE(SUM(CASE WHEN type='income' THEN amount_cents END),0) income,
                           COALESCE(SUM(CASE WHEN type='expense' THEN amount_cents END),0) expense
@@ -427,7 +427,7 @@ def create_app(test_config: dict | None = None) -> Flask:
     def api_user(connection: sqlite3.Connection):
         user = native_user_from_request(connection)
         if not user:
-            return None, (jsonify({"error": "SessÃƒÂ£o invÃƒÂ¡lida ou expirada."}), 401)
+            return None, (jsonify({"error": "Sessão inválida ou expirada."}), 401)
         return user, None
 
     def api_amount(payload: dict) -> int:
@@ -456,7 +456,7 @@ def create_app(test_config: dict | None = None) -> Flask:
         name = " ".join(str(payload.get("name", "")).split())
         color = str(payload.get("color", "#14b8a6"))
         if len(name) < 2 or not re.fullmatch(r"#[0-9A-Fa-f]{6}", color):
-            return jsonify({"error": "Informe um nome e uma cor vÃƒÂ¡lidos."}), 400
+            return jsonify({"error": "Informe um nome e uma cor válidos."}), 400
         try:
             with db() as connection:
                 user, failure = api_user(connection)
@@ -468,7 +468,7 @@ def create_app(test_config: dict | None = None) -> Flask:
                 category_id = cursor.lastrowid
             return jsonify({"id": category_id, "name": name, "color": color}), 201
         except sqlite3.IntegrityError:
-            return jsonify({"error": "Esta categoria jÃƒÂ¡ existe."}), 409
+            return jsonify({"error": "Esta categoria já existe."}), 409
 
     @app.put("/api/v2/categories/<int:category_id>")
     def api_categories_update(category_id: int):
@@ -476,7 +476,7 @@ def create_app(test_config: dict | None = None) -> Flask:
         name = " ".join(str(payload.get("name", "")).split())
         color = str(payload.get("color", "#14b8a6"))
         if len(name) < 2 or not re.fullmatch(r"#[0-9A-Fa-f]{6}", color):
-            return jsonify({"error": "Informe um nome e uma cor vÃƒÂ¡lidos."}), 400
+            return jsonify({"error": "Informe um nome e uma cor válidos."}), 400
         try:
             with db() as connection:
                 user, failure = api_user(connection)
@@ -487,10 +487,10 @@ def create_app(test_config: dict | None = None) -> Flask:
                     (name, color, category_id, user["id"]),
                 )
                 if not result.rowcount:
-                    return jsonify({"error": "Categoria nÃƒÂ£o encontrada."}), 404
+                    return jsonify({"error": "Categoria não encontrada."}), 404
             return jsonify({"id": category_id, "name": name, "color": color})
         except sqlite3.IntegrityError:
-            return jsonify({"error": "Esta categoria jÃƒÂ¡ existe."}), 409
+            return jsonify({"error": "Esta categoria já existe."}), 409
 
     @app.delete("/api/v2/categories/<int:category_id>")
     def api_categories_delete(category_id: int):
@@ -500,7 +500,7 @@ def create_app(test_config: dict | None = None) -> Flask:
                 return failure
             result = connection.execute("DELETE FROM categories WHERE id=? AND user_id=?", (category_id, user["id"]))
             if not result.rowcount:
-                return jsonify({"error": "Categoria nÃƒÂ£o encontrada."}), 404
+                return jsonify({"error": "Categoria não encontrada."}), 404
         return "", 204
 
     @app.get("/api/v2/transactions")
@@ -531,11 +531,11 @@ def create_app(test_config: dict | None = None) -> Flask:
         transaction_type = str(payload.get("type", ""))
         occurred_on = str(payload.get("occurred_on", date.today().isoformat()))
         if len(description) < 2 or not amount or transaction_type not in {"income", "expense"}:
-            return jsonify({"error": "Preencha descriÃƒÂ§ÃƒÂ£o, valor e tipo."}), 400
+            return jsonify({"error": "Preencha descrição, valor e tipo."}), 400
         try:
             datetime.strptime(occurred_on, "%Y-%m-%d")
         except ValueError:
-            return jsonify({"error": "Data invÃƒÂ¡lida."}), 400
+            return jsonify({"error": "Data inválida."}), 400
         with db() as connection:
             user, failure = api_user(connection)
             if failure:
@@ -546,7 +546,7 @@ def create_app(test_config: dict | None = None) -> Flask:
                     (user["id"],),
                 ).fetchone()[0]
                 if balance < amount:
-                    return jsonify({"error": "Saldo insuficiente para esta saÃƒÂ­da."}), 409
+                    return jsonify({"error": "Saldo insuficiente para esta saída."}), 409
             cursor = connection.execute(
                 """INSERT INTO transactions(user_id,category_id,description,amount_cents,type,occurred_on,notes,source)
                    VALUES(?,?,?,?,?,?,?,'manual')""",
@@ -565,9 +565,9 @@ def create_app(test_config: dict | None = None) -> Flask:
                 "SELECT source FROM transactions WHERE id=? AND user_id=?", (transaction_id, user["id"])
             ).fetchone()
             if not item:
-                return jsonify({"error": "TransaÃƒÂ§ÃƒÂ£o nÃƒÂ£o encontrada."}), 404
+                return jsonify({"error": "Transação não encontrada."}), 404
             if item["source"] != "manual":
-                return jsonify({"error": "MovimentaÃƒÂ§ÃƒÂµes automÃƒÂ¡ticas devem ser alteradas pela despesa."}), 409
+                return jsonify({"error": "Movimentações automáticas devem ser alteradas pela despesa."}), 409
             connection.execute("DELETE FROM transactions WHERE id=? AND user_id=?", (transaction_id, user["id"]))
         return "", 204
 
@@ -596,9 +596,9 @@ def create_app(test_config: dict | None = None) -> Flask:
         try:
             due_date = datetime.strptime(due_on, "%Y-%m-%d").date()
         except ValueError:
-            return jsonify({"error": "Vencimento invÃƒÂ¡lido."}), 400
+            return jsonify({"error": "Vencimento inválido."}), 400
         if len(description) < 2 or not amount:
-            return jsonify({"error": "Informe descriÃƒÂ§ÃƒÂ£o e valor da parcela."}), 400
+            return jsonify({"error": "Informe descrição e valor da parcela."}), 400
         recurring = bool(payload.get("recurring_monthly", False))
         recurrence_key = secrets.token_hex(12) if recurring else None
         with db() as connection:
@@ -622,7 +622,7 @@ def create_app(test_config: dict | None = None) -> Flask:
                 return failure
             expense = connection.execute("SELECT * FROM expenses WHERE id=? AND user_id=?", (expense_id, user["id"])).fetchone()
             if not expense or expense["paid_at"]:
-                return jsonify({"error": "Despesa indisponÃƒÂ­vel para pagamento."}), 409
+                return jsonify({"error": "Despesa indisponível para pagamento."}), 409
             balance = connection.execute(
                 "SELECT COALESCE(SUM(CASE WHEN type='income' THEN amount_cents ELSE -amount_cents END),0) FROM transactions WHERE user_id=?",
                 (user["id"],),
@@ -651,7 +651,7 @@ def create_app(test_config: dict | None = None) -> Flask:
                 return failure
             expense = connection.execute("SELECT * FROM expenses WHERE id=? AND user_id=?", (expense_id, user["id"])).fetchone()
             if not expense or expense["installments_paid"] < 1:
-                return jsonify({"error": "Esta despesa ainda nÃƒÂ£o possui parcela paga."}), 409
+                return jsonify({"error": "Esta despesa ainda não possui parcela paga."}), 409
             restored = expense["installments_paid"]
             connection.execute(
                 "UPDATE expenses SET installments_paid=?,paid_at=NULL WHERE id=? AND user_id=?",
@@ -661,7 +661,7 @@ def create_app(test_config: dict | None = None) -> Flask:
                 """INSERT INTO transactions(user_id,category_id,description,amount_cents,type,occurred_on,notes,source,expense_id)
                    VALUES(?,?,?,?, 'income', ?,?,'expense_restore',?)""",
                 (user["id"], expense["category_id"], f"Estorno: {expense['description']}", expense["amount_cents"],
-                 date.today().isoformat(), f"RestauraÃƒÂ§ÃƒÂ£o da parcela {restored}", expense_id),
+                 date.today().isoformat(), f"Restauração da parcela {restored}", expense_id),
             )
         return jsonify({"paid_installments": restored - 1})
 
@@ -673,7 +673,7 @@ def create_app(test_config: dict | None = None) -> Flask:
                 return failure
             expense = connection.execute("SELECT recurrence_key FROM expenses WHERE id=? AND user_id=?", (expense_id, user["id"])).fetchone()
             if not expense:
-                return jsonify({"error": "Despesa nÃƒÂ£o encontrada."}), 404
+                return jsonify({"error": "Despesa não encontrada."}), 404
             if expense["recurrence_key"]:
                 connection.execute("DELETE FROM expenses WHERE recurrence_key=? AND user_id=?", (expense["recurrence_key"], user["id"]))
             else:
@@ -703,32 +703,32 @@ def create_app(test_config: dict | None = None) -> Flask:
             if len(full_name) < 5:
                 flash("Informe seu nome completo.", "error")
             elif len(document) < 7 or len(document) > 14:
-                flash("Informe um RG ou CPF vÃ¡lido.", "error")
+                flash("Informe um RG ou CPF válido.", "error")
             elif not valid_birth_date:
-                flash("Informe uma data de nascimento vÃ¡lida.", "error")
+                flash("Informe uma data de nascimento válida.", "error")
             elif not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
-                flash("Informe um endereÃ§o de e-mail vÃ¡lido.", "error")
+                flash("Informe um endereço de e-mail válido.", "error")
             elif len(username) < 3:
-                flash("O usuÃ¡rio deve ter pelo menos 3 caracteres.", "error")
+                flash("O usuário deve ter pelo menos 3 caracteres.", "error")
             elif len(password) < 8:
                 flash("A senha deve ter pelo menos 8 caracteres.", "error")
             elif password != confirmation:
-                flash("As senhas nÃ£o coincidem.", "error")
+                flash("As senhas não coincidem.", "error")
             else:
                 try:
                     with db() as connection:
                         cursor = connection.execute("""INSERT INTO users(full_name,document,birth_date,email,username,password_hash)
                                                        VALUES(?,?,?,?,?,?)""", (full_name, document, birth_date, email, username, generate_password_hash(password)))
                         connection.executemany("INSERT INTO categories(user_id,name,color) VALUES(?,?,?)", [
-                            (cursor.lastrowid, "Moradia", "#8b5cf6"), (cursor.lastrowid, "AlimentaÃ§Ã£o", "#22c55e"),
-                            (cursor.lastrowid, "Transporte", "#38bdf8"), (cursor.lastrowid, "SalÃ¡rio", "#f59e0b")])
+                            (cursor.lastrowid, "Moradia", "#14b8a6"), (cursor.lastrowid, "Alimentação", "#22c55e"),
+                            (cursor.lastrowid, "Transporte", "#38bdf8"), (cursor.lastrowid, "Salário", "#f59e0b")])
                     session.clear()
                     session["user_id"], session["username"], session["full_name"] = cursor.lastrowid, username, full_name
                     session.permanent = False
-                    flash("Conta criada com sucesso. Seus dados financeiros sÃ£o privados.", "success")
+                    flash("Conta criada com sucesso. Seus dados financeiros são privados.", "success")
                     return redirect(url_for("dashboard"))
                 except sqlite3.IntegrityError:
-                    flash("Este e-mail ou nome de usuÃ¡rio jÃ¡ estÃ¡ em uso.", "error")
+                    flash("Este e-mail ou nome de usuário já está em uso.", "error")
         return render_template("setup.html")
 
     @app.route("/", methods=["GET", "POST"])
@@ -748,13 +748,13 @@ def create_app(test_config: dict | None = None) -> Flask:
                     session.permanent = request.form.get("remember") == "1"
                     destination = request.args.get("next", "")
                     return redirect(destination if destination.startswith("/") and not destination.startswith("//") else url_for("dashboard"))
-            flash("UsuÃ¡rio ou senha invÃ¡lidos.", "error")
+            flash("Usuário ou senha inválidos.", "error")
         return render_template("login.html")
 
     @app.post("/logout")
     def logout():
         session.clear()
-        flash("SessÃ£o encerrada com seguranÃ§a.", "success")
+        flash("Sessão encerrada com segurança.", "success")
         return redirect(url_for("login"))
 
     @app.template_filter("money")
@@ -824,14 +824,14 @@ def create_app(test_config: dict | None = None) -> Flask:
             try:
                 kind = request.form["type"]
                 if kind not in {"income", "expense"}:
-                    raise ValueError("Tipo invÃ¡lido")
+                    raise ValueError("Tipo inválido")
                 amount = Decimal(request.form["amount"].replace(",", "."))
                 if amount <= 0:
                     raise ValueError("O valor deve ser positivo")
                 amount_cents = int(amount * 100)
                 description = request.form["description"].strip()
                 if not description:
-                    raise ValueError("Informe uma descriÃ§Ã£o")
+                    raise ValueError("Informe uma descrição")
                 occurred_on = datetime.strptime(request.form["occurred_on"], "%Y-%m-%d").date().isoformat()
                 category_id = request.form.get("category_id") or None
                 with db() as connection:
@@ -841,7 +841,7 @@ def create_app(test_config: dict | None = None) -> Flask:
                         "INSERT INTO transactions(user_id, description, amount_cents, type, category_id, occurred_on, notes, source) VALUES(?,?,?,?,?,?,?, 'manual')",
                         (user_id, description, amount_cents, kind, category_id, occurred_on, request.form.get("notes", "").strip()),
                     )
-                flash("TransaÃ§Ã£o salva com sucesso.", "success")
+                flash("Transação salva com sucesso.", "success")
                 return redirect(url_for("transactions"))
             except (ValueError, InvalidOperation, KeyError) as exc:
                 flash(str(exc) or "Confira os dados informados.", "error")
@@ -881,7 +881,7 @@ def create_app(test_config: dict | None = None) -> Flask:
                 if recurring_monthly:
                     installments = 1
                 if not description or installment_amount <= 0 or not 1 <= installments <= 360:
-                    raise ValueError("Confira a descriÃ§Ã£o, o valor e as parcelas.")
+                    raise ValueError("Confira a descrição, o valor e as parcelas.")
                 total_cents = int(installment_amount * 100) * installments
                 with db() as connection:
                     category_id = request.form.get("category_id") or None
@@ -925,7 +925,7 @@ def create_app(test_config: dict | None = None) -> Flask:
             expense = connection.execute("SELECT * FROM expenses WHERE id=? AND user_id=?", (transaction_id, user_id)).fetchone()
             balance = connection.execute("SELECT COALESCE(SUM(CASE WHEN type='income' THEN amount_cents ELSE -amount_cents END),0) FROM transactions WHERE user_id=?", (user_id,)).fetchone()[0]
             if not expense or expense["paid_at"]:
-                flash("Essa despesa nÃ£o estÃ¡ disponÃ­vel para pagamento.", "error")
+                flash("Essa despesa não está disponível para pagamento.", "error")
                 return redirect(url_for("expenses"))
             installment_amount = round(expense["amount_cents"] / expense["installment_count"])
             if balance < installment_amount:
@@ -946,14 +946,14 @@ def create_app(test_config: dict | None = None) -> Flask:
         with db() as connection:
             expense = connection.execute("SELECT * FROM expenses WHERE id=? AND user_id=?", (transaction_id, user_id)).fetchone()
             if not expense or expense["installments_paid"] <= 0:
-                flash("A despesa ainda nÃ£o foi paga.", "error")
+                flash("A despesa ainda não foi paga.", "error")
                 return redirect(url_for("expenses"))
             now = datetime.now()
             restored_installment = expense["installments_paid"]
             installment_amount = round(expense["amount_cents"] / expense["installment_count"])
             connection.execute("UPDATE expenses SET paid_at=NULL, installments_paid=? WHERE id=? AND user_id=?", (restored_installment - 1, transaction_id, user_id))
             connection.execute("""INSERT INTO transactions(user_id,description,amount_cents,type,category_id,occurred_on,notes,source,expense_id)
-                                  VALUES(?,?,?,'income',?,?,?,'expense_restore',?)""", (user_id, f"Estorno: {expense['description']} (parcela {restored_installment}/{expense['installment_count']})", installment_amount, expense["category_id"], now.date().isoformat(), "RestauraÃ§Ã£o de parcela", transaction_id))
+                                  VALUES(?,?,?,'income',?,?,?,'expense_restore',?)""", (user_id, f"Estorno: {expense['description']} (parcela {restored_installment}/{expense['installment_count']})", installment_amount, expense["category_id"], now.date().isoformat(), "Restauração de parcela", transaction_id))
         flash("Parcela restaurada com sucesso.", "success")
         return redirect(url_for("expenses"))
 
@@ -964,10 +964,10 @@ def create_app(test_config: dict | None = None) -> Flask:
             expense = connection.execute("SELECT recurrence_key FROM expenses WHERE id=? AND user_id=?", (transaction_id, user_id)).fetchone()
             if expense and expense["recurrence_key"]:
                 connection.execute("DELETE FROM expenses WHERE recurrence_key=? AND user_id=?", (expense["recurrence_key"], user_id))
-                flash("Despesa e repetiÃ§Ã£o mensal excluÃ­das.", "success")
+                flash("Despesa e repetição mensal excluídas.", "success")
             else:
                 connection.execute("DELETE FROM expenses WHERE id=? AND user_id=?", (transaction_id, user_id))
-                flash("Despesa excluÃ­da.", "success")
+                flash("Despesa excluída.", "success")
         return redirect(url_for("expenses"))
 
     @app.post("/transactions/<int:transaction_id>/delete")
@@ -975,7 +975,7 @@ def create_app(test_config: dict | None = None) -> Flask:
         user_id = active_user_id()
         with db() as connection:
             connection.execute("DELETE FROM transactions WHERE id=? AND user_id=?", (transaction_id, user_id))
-        flash("TransaÃ§Ã£o excluÃ­da.", "success")
+        flash("Transação excluída.", "success")
         return redirect(url_for("transactions"))
 
     @app.route("/categories", methods=["GET", "POST"])
@@ -983,7 +983,7 @@ def create_app(test_config: dict | None = None) -> Flask:
         user_id = active_user_id()
         if request.method == "POST":
             name = request.form.get("name", "").strip()
-            color = request.form.get("color", "#8b5cf6")
+            color = request.form.get("color", "#14b8a6")
             if not name:
                 flash("Informe o nome da categoria.", "error")
             else:
@@ -993,7 +993,7 @@ def create_app(test_config: dict | None = None) -> Flask:
                     flash("Categoria criada.", "success")
                     return redirect(url_for("categories"))
                 except sqlite3.IntegrityError:
-                    flash("Essa categoria jÃ¡ existe.", "error")
+                    flash("Essa categoria já existe.", "error")
         with db() as connection:
             rows = connection.execute(
                 """SELECT c.*, COUNT(DISTINCT t.id) transaction_count,
@@ -1010,18 +1010,18 @@ def create_app(test_config: dict | None = None) -> Flask:
     def edit_category(category_id: int):
         user_id = active_user_id()
         name = request.form.get("name", "").strip()
-        color = request.form.get("color", "#8b5cf6").lower()
+        color = request.form.get("color", "#14b8a6").lower()
         if not name or not re.fullmatch(r"#[0-9a-f]{6}", color):
-            flash("Informe um nome e uma cor vÃ¡lidos.", "error")
+            flash("Informe um nome e uma cor válidos.", "error")
             return redirect(url_for("categories"))
         try:
             with db() as connection:
                 updated = connection.execute(
                     "UPDATE categories SET name=?, color=? WHERE id=? AND user_id=?", (name, color, category_id, user_id)
                 )
-            flash("Categoria atualizada." if updated.rowcount else "Categoria nÃ£o encontrada.", "success" if updated.rowcount else "error")
+            flash("Categoria atualizada." if updated.rowcount else "Categoria não encontrada.", "success" if updated.rowcount else "error")
         except sqlite3.IntegrityError:
-            flash("JÃ¡ existe uma categoria com esse nome.", "error")
+            flash("Já existe uma categoria com esse nome.", "error")
         return redirect(url_for("categories"))
 
     @app.post("/categories/<int:category_id>/delete")
@@ -1030,9 +1030,9 @@ def create_app(test_config: dict | None = None) -> Flask:
         with db() as connection:
             deleted = connection.execute("DELETE FROM categories WHERE id=? AND user_id=?", (category_id, user_id))
         if deleted.rowcount:
-            flash("Categoria excluÃ­da. Os registros vinculados foram mantidos como sem categoria.", "success")
+            flash("Categoria excluída. Os registros vinculados foram mantidos como sem categoria.", "success")
         else:
-            flash("Categoria nÃ£o encontrada.", "error")
+            flash("Categoria não encontrada.", "error")
         return redirect(url_for("categories"))
 
     @app.get("/api/summary")
