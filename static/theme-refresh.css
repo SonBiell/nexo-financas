@@ -6,3 +6,20 @@ body{background:radial-gradient(circle at 82% 0,#12313a 0,transparent 32%),var(-
 input:focus,select:focus,textarea:focus{border-color:#14b8a6}.segmented input:checked+span{background:#14b8a628;border-color:#14b8a6;color:#99f6e4}
 .auth-mark{padding:5px;background:#0c1c24!important;box-shadow:0 8px 24px #0f766e55!important}.auth-card{background:linear-gradient(145deg,#12232b,#0a151b)!important}.auth-switch a{color:#5eead4!important}
 @media(max-width:850px){.bottom-nav a.active{color:#5eead4}}
+.account-avatar,.mobile-user-avatar{background:linear-gradient(135deg,#0f766e,#0284c7);color:#ccfbf1}
+.category-action{background:#102029;color:#99f6e4}.category-dialog{background:#0d1820}.install-app{border-color:#14b8a655;background:#14b8a618;color:#99f6e4}
+.expense-summary a.active{background:#14b8a618}.action.restore{color:#7dd3fc}
+.recurring-option:has(input:checked){background:#14b8a614}.recurring-badge{background:#14b8a620;color:#99f6e4}
+.summary-cards .metric:after{background:#14b8a612}
+
+/* Mantém filtros e seletores confortáveis em telas sensíveis ao toque. */
+.filters a {
+  min-height: 36px;
+  display: inline-flex;
+  align-items: center;
+}
+
+input[type="color"] {
+  min-height: 44px;
+  padding: 4px;
+}
