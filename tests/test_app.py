@@ -16,7 +16,7 @@ class FinanceAppTest(unittest.TestCase):
     def test_dashboard_loads(self):
         response = self.client.get("/dashboard")
         self.assertEqual(response.status_code, 200)
-        self.assertIn("VisÃ£o geral".encode(), response.data)
+        self.assertIn("Visão geral".encode(), response.data)
         self.assertIn(b"dashboard-recent", response.data)
         self.assertIn(b"expenses-desktop.css", response.data)
 
@@ -45,7 +45,7 @@ class FinanceAppTest(unittest.TestCase):
             "installment_count": "1", "category_id": "", "notes": "",
         })
         response = self.client.get("/dashboard")
-        self.assertIn("VisÃ£o das despesas".encode(), response.data)
+        self.assertIn("Visão das despesas".encode(), response.data)
         self.assertIn(b"Conta vencida", response.data)
         self.assertIn("Atrasada".encode(), response.data)
 
@@ -54,14 +54,14 @@ class FinanceAppTest(unittest.TestCase):
             "type": "income", "description": "Freelance", "amount": "1500,50",
             "occurred_on": "2026-08-05", "category_id": "", "notes": "",
         }, follow_redirects=True)
-        self.assertIn("TransaÃ§Ã£o salva".encode(), response.data)
+        self.assertIn("Transação salva".encode(), response.data)
         summary = self.client.get("/api/summary?month=2026-08").get_json()
         self.assertEqual(summary["income_cents"], 150050)
         self.assertEqual(summary["balance_cents"], 150050)
 
     def test_create_category(self):
-        response = self.client.post("/categories", data={"name": "SaÃºde", "color": "#ef4444"}, follow_redirects=True)
-        self.assertIn("SaÃºde".encode(), response.data)
+        response = self.client.post("/categories", data={"name": "Saúde", "color": "#ef4444"}, follow_redirects=True)
+        self.assertIn("Saúde".encode(), response.data)
 
     def test_edit_and_delete_category_preserves_linked_records(self):
         self.client.post("/categories", data={"name": "Lazer", "color": "#8b5cf6"})
@@ -72,10 +72,10 @@ class FinanceAppTest(unittest.TestCase):
             "type": "income", "description": "Reembolso", "amount": "50,00",
             "occurred_on": "2026-08-05", "category_id": str(category_id), "notes": "",
         })
-        edited = self.client.post(f"/categories/{category_id}/edit", data={"name": "DiversÃ£o", "color": "#22c55e"}, follow_redirects=True)
-        self.assertIn("DiversÃ£o".encode(), edited.data)
+        edited = self.client.post(f"/categories/{category_id}/edit", data={"name": "Diversão", "color": "#22c55e"}, follow_redirects=True)
+        self.assertIn("Diversão".encode(), edited.data)
         deleted = self.client.post(f"/categories/{category_id}/delete", follow_redirects=True)
-        self.assertNotIn("DiversÃ£o".encode(), deleted.data)
+        self.assertNotIn("Diversão".encode(), deleted.data)
         self.assertIn(b"Reembolso", self.client.get("/transactions?period=all").data)
 
     def test_pwa_manifest_is_available(self):
@@ -95,22 +95,23 @@ class FinanceAppTest(unittest.TestCase):
         self.assertIn(b"12 x R$ 120,00", page.data)
         self.assertIn(b"R$ 1.440,00 total", page.data)
         self.assertIn("Pendente".encode(), page.data)
-        self.assertIn(b'data-label="Vencimento"', page.data)
+        self.assertIn(b"<dt>Vencimento</dt>", page.data)
+        self.assertIn(b'expense-card--pending', page.data)
         insufficient = self.client.post("/expenses/1/pay", follow_redirects=True)
         self.assertIn("Saldo insuficiente".encode(), insufficient.data)
         self.client.post("/transactions", data={
-            "type": "income", "description": "DepÃ³sito", "amount": "2000,00",
+            "type": "income", "description": "Depósito", "amount": "2000,00",
             "occurred_on": date.today().isoformat(), "category_id": "", "notes": "",
         })
         self.client.post("/expenses/1/pay")
         paid_once = self.client.get("/expenses").data
-        self.assertIn(b"1 / 12", paid_once)
+        self.assertIn(b"1 de 12", paid_once)
         self.assertIn("Pendente".encode(), paid_once)
         summary = self.client.get(f"/api/summary?month={date.today():%Y-%m}").get_json()
         self.assertEqual(summary["balance_cents"], 188000)
         self.client.post("/expenses/1/restore")
         restored = self.client.get("/expenses").data
-        self.assertIn(b"0 / 12", restored)
+        self.assertIn(b"0 de 12", restored)
         self.assertIn("Pendente".encode(), restored)
         summary = self.client.get(f"/api/summary?month={date.today():%Y-%m}").get_json()
         self.assertEqual(summary["balance_cents"], 200000)
@@ -174,7 +175,7 @@ class AuthenticationTest(unittest.TestCase):
         self.assertEqual(self.client.get("/dashboard").location, "/login?next=/dashboard")
         self.client.get("/login")
         invalid = self.client.post("/login", data={"csrf_token": self.token(), "username": "thiago", "password": "errada"}, follow_redirects=True)
-        self.assertIn("invÃ¡lidos".encode(), invalid.data)
+        self.assertIn("inválidos".encode(), invalid.data)
         valid = self.client.post("/login", data={"csrf_token": self.token(), "username": "thiago", "password": "segura123"})
         self.assertEqual(valid.location, "/dashboard")
 
@@ -182,7 +183,7 @@ class AuthenticationTest(unittest.TestCase):
         def register(suffix):
             self.client.get("/setup")
             return self.client.post("/setup", data={
-                "csrf_token": self.token(), "full_name": f"UsuÃ¡rio Completo {suffix}",
+                "csrf_token": self.token(), "full_name": f"Usuário Completo {suffix}",
                 "document": f"1234567890{suffix}", "birth_date": "1990-05-10",
                 "email": f"user{suffix}@example.com", "username": f"user{suffix}",
                 "password": "segura123", "password_confirmation": "segura123",
@@ -191,21 +192,21 @@ class AuthenticationTest(unittest.TestCase):
         register("1")
         self.client.get("/transactions")
         self.client.post("/transactions", data={
-            "csrf_token": self.token(), "type": "income", "description": "Privado do usuÃ¡rio 1",
+            "csrf_token": self.token(), "type": "income", "description": "Privado do usuário 1",
             "amount": "500,00", "occurred_on": date.today().isoformat(), "category_id": "", "notes": "",
         })
         self.client.get("/dashboard")
         self.client.post("/logout", data={"csrf_token": self.token()})
         register("2")
         second_view = self.client.get("/transactions?period=all")
-        self.assertNotIn("Privado do usuÃ¡rio 1".encode(), second_view.data)
+        self.assertNotIn("Privado do usuário 1".encode(), second_view.data)
         self.client.get("/transactions")
         self.client.post("/transactions/1/delete", data={"csrf_token": self.token()})
         self.client.get("/dashboard")
         self.client.post("/logout", data={"csrf_token": self.token()})
         self.client.get("/")
         self.client.post("/", data={"csrf_token": self.token(), "username": "user1", "password": "segura123"})
-        self.assertIn("Privado do usuÃ¡rio 1".encode(), self.client.get("/transactions?period=all").data)
+        self.assertIn("Privado do usuário 1".encode(), self.client.get("/transactions?period=all").data)
 
 
 class NativeApiAuthenticationTest(unittest.TestCase):
@@ -217,7 +218,7 @@ class NativeApiAuthenticationTest(unittest.TestCase):
 
     def register(self, suffix):
         return self.client.post("/api/v2/auth/register", json={
-            "full_name": f"UsuÃ¡rio Teste {suffix}", "email": f"user{suffix}@example.com",
+            "full_name": f"Usuário Teste {suffix}", "email": f"user{suffix}@example.com",
             "username": f"user{suffix}", "password": "segura123",
         })
 
@@ -251,7 +252,7 @@ class NativeApiAuthenticationTest(unittest.TestCase):
         registered = self.register("nosaldo")
         headers = {"Authorization": f"Bearer {registered.get_json()['token']}"}
         response = self.client.post("/api/v2/transactions", headers=headers, json={
-            "description": "SaÃ­da sem saldo", "amount_cents": 5000,
+            "description": "Saída sem saldo", "amount_cents": 5000,
             "type": "expense", "occurred_on": date.today().isoformat(),
         })
         self.assertEqual(response.status_code, 409)
@@ -287,7 +288,7 @@ class NativeApiAuthenticationTest(unittest.TestCase):
     def test_native_crud_uses_shared_financial_tables(self):
         registered = self.register("crud")
         headers = {"Authorization": f"Bearer {registered.get_json()['token']}"}
-        category = self.client.post("/api/v2/categories", headers=headers, json={"name": "SaÃºde", "color": "#14B8A6"})
+        category = self.client.post("/api/v2/categories", headers=headers, json={"name": "Saúde", "color": "#14B8A6"})
         self.assertEqual(category.status_code, 201)
         income = self.client.post("/api/v2/transactions", headers=headers, json={
             "description": "Entrada inicial", "amount_cents": 100000, "type": "income",
