@@ -4,14 +4,14 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#090d18">
-  <meta name="application-name" content="Nexo FinanÃ§as">
+  <meta name="application-name" content="Nexo Finanças">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <link rel="manifest" href="{{ url_for('static', filename='manifest.webmanifest') }}">
   <link rel="icon" href="{{ url_for('static', filename='icons/nexo.svg') }}" type="image/svg+xml">
   <link rel="apple-touch-icon" href="{{ url_for('static', filename='icons/nexo.svg') }}">
   <meta name="csrf-token" content="{{ csrf_token() }}">
-  <title>{% block title %}FinanÃ§as{% endblock %} Â· Nexo</title>
+  <title>{% block title %}Finanças{% endblock %} · Nexo</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -32,28 +32,28 @@
 <body>
   <div class="shell">
     <aside class="sidebar">
-      <a class="brand" href="{{ url_for('dashboard') }}"><span class="brand-mark"><img src="{{ url_for('static', filename='icons/nexo.svg') }}" alt=""></span><span>Nexo<small>FinanÃ§as pessoais</small></span></a>
+      <a class="brand" href="{{ url_for('dashboard') }}"><span class="brand-mark"><img src="{{ url_for('static', filename='icons/nexo.svg') }}" alt=""></span><span>Nexo<small>Finanças pessoais</small></span></a>
       <nav aria-label="Principal">
-        <a class="{{ 'active' if request.endpoint == 'dashboard' }}" href="{{ url_for('dashboard') }}"><span>âŒ‚</span> VisÃ£o geral</a>
-        <a class="{{ 'active' if request.endpoint in ['transactions','delete_transaction'] }}" href="{{ url_for('transactions') }}"><span>â†”</span> TransaÃ§Ãµes</a>
-        <a class="{{ 'active' if request.endpoint in ['expenses','pay_expense','restore_expense','delete_expense'] }}" href="{{ url_for('expenses') }}"><span>â–¤</span> Despesas</a>
-        <a class="{{ 'active' if request.endpoint == 'categories' }}" href="{{ url_for('categories') }}"><span>â—‡</span> Categorias</a>
+        <a class="{{ 'active' if request.endpoint == 'dashboard' }}" href="{{ url_for('dashboard') }}"><span>⌂</span> Visão geral</a>
+        <a class="{{ 'active' if request.endpoint in ['transactions','delete_transaction'] }}" href="{{ url_for('transactions') }}"><span>↔</span> Transações</a>
+        <a class="{{ 'active' if request.endpoint in ['expenses','pay_expense','restore_expense','delete_expense'] }}" href="{{ url_for('expenses') }}"><span>▤</span> Despesas</a>
+        <a class="{{ 'active' if request.endpoint == 'categories' }}" href="{{ url_for('categories') }}"><span>◇</span> Categorias</a>
       </nav>
-      <a class="export" href="{{ url_for('export_data') }}">â†“ Exportar backup JSON</a>
-      <button type="button" class="install-app" hidden><span>ï¼‹</span> Instalar aplicativo</button>
-      {% if logged_in %}<div class="account"><span class="account-avatar">{{ current_full_name[0]|upper }}</span><div class="account-name"><strong>{{ current_full_name }}</strong><small>@{{ current_username }} Â· sessÃ£o segura</small></div><form method="post" action="{{ url_for('logout') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="logout-button" aria-label="Encerrar sessÃ£o"><span>â†ª</span> Sair</button></form></div>{% endif %}
-      <p class="privacy">â— Seus dados ficam neste dispositivo</p>
+      <a class="export" href="{{ url_for('export_data') }}">↓ Exportar backup JSON</a>
+      <button type="button" class="install-app" hidden><span>＋</span> Instalar aplicativo</button>
+      {% if logged_in %}<div class="account"><span class="account-avatar">{{ current_full_name[0]|upper }}</span><div class="account-name"><strong>{{ current_full_name }}</strong><small>@{{ current_username }} · sessão segura</small></div><form method="post" action="{{ url_for('logout') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="logout-button" aria-label="Encerrar sessão"><span>↪</span> Sair</button></form></div>{% endif %}
+      <p class="privacy">● Seus dados ficam neste dispositivo</p>
     </aside>
     <main>
-      <header class="mobile-header"><a class="brand" href="/"><span class="brand-mark"><img src="{{ url_for('static', filename='icons/nexo.svg') }}" alt=""></span>Nexo</a>{% if logged_in %}<form class="mobile-logout" method="post" action="{{ url_for('logout') }}" data-confirm="Deseja encerrar sua sessÃ£o no Nexo?"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><span class="mobile-user-avatar" aria-hidden="true">{{ current_full_name[0]|upper }}</span><button aria-label="Encerrar sessÃ£o"><span>â†ª</span><span class="mobile-logout-label">Sair</span></button></form>{% endif %}</header>
+      <header class="mobile-header"><a class="brand" href="/"><span class="brand-mark"><img src="{{ url_for('static', filename='icons/nexo.svg') }}" alt=""></span>Nexo</a>{% if logged_in %}<form class="mobile-logout" method="post" action="{{ url_for('logout') }}" data-confirm="Deseja encerrar sua sessão no Nexo?"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><span class="mobile-user-avatar" aria-hidden="true">{{ current_full_name[0]|upper }}</span><button aria-label="Encerrar sessão"><span>↪</span><span class="mobile-logout-label">Sair</span></button></form>{% endif %}</header>
       {% with messages = get_flashed_messages(with_categories=true) %}{% for category, message in messages %}<div class="toast {{ category }}">{{ message }}</div>{% endfor %}{% endwith %}
       {% block content %}{% endblock %}
     </main>
     <nav class="bottom-nav" aria-label="Principal">
-      <a class="{{ 'active' if request.endpoint == 'dashboard' }}" href="{{ url_for('dashboard') }}">âŒ‚<span>Resumo</span></a>
-      <a class="{{ 'active' if request.endpoint == 'transactions' }}" href="{{ url_for('transactions') }}">â†”<span>TransaÃ§Ãµes</span></a>
-      <a class="{{ 'active' if request.endpoint == 'expenses' }}" href="{{ url_for('expenses') }}">â–¤<span>Despesas</span></a>
-      <a class="{{ 'active' if request.endpoint == 'categories' }}" href="{{ url_for('categories') }}">â—‡<span>Categorias</span></a>
+      <a class="{{ 'active' if request.endpoint == 'dashboard' }}" href="{{ url_for('dashboard') }}">⌂<span>Resumo</span></a>
+      <a class="{{ 'active' if request.endpoint == 'transactions' }}" href="{{ url_for('transactions') }}">↔<span>Transações</span></a>
+      <a class="{{ 'active' if request.endpoint == 'expenses' }}" href="{{ url_for('expenses') }}">▤<span>Despesas</span></a>
+      <a class="{{ 'active' if request.endpoint == 'categories' }}" href="{{ url_for('categories') }}">◇<span>Categorias</span></a>
     </nav>
   </div>
 </body>
